@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build-and-deploy:
@@ -22,17 +20,19 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install
+        run: npm install --legacy-peer-deps
 
       - name: Build
         run: npm run build
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           CI: false
+          PUBLIC_URL: /realty-tracker
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
+          force_orphan: true
