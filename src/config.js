@@ -1,21 +1,15 @@
-// ── CONFIGURE YOUR APPS SCRIPT URL HERE ─────────────────────
-// After deploying your Google Apps Script as a Web App,
-// paste the deployment URL below:
-
 const API_BASE_URL = import.meta.env.VITE_API_URL || "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 
+// All requests use GET to avoid CORS preflight issues with Apps Script doPost
 export const API = {
   get: async (action, params = {}) => {
     const qs = new URLSearchParams({ action, ...params }).toString();
-    const res = await fetch(`${API_BASE_URL}?${qs}`);
+    const res = await fetch(`${API_BASE_URL}?${qs}`, { redirect: "follow" });
     return res.json();
   },
   post: async (action, body = {}) => {
-    const res = await fetch(API_BASE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...body })
-    });
+    const qs = new URLSearchParams({ action, data: JSON.stringify(body) }).toString();
+    const res = await fetch(`${API_BASE_URL}?${qs}`, { redirect: "follow" });
     return res.json();
   }
 };
