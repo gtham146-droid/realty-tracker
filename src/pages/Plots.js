@@ -170,11 +170,74 @@ function ActionBtns({ onEdit, onDelete }) {
   );
 }
 
+
+// ── Profit Share Breakdown Panel ──────────────────────────────
+function ProfitSharePanel({ plotId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => { API.get("getPlotProfitShare", { plotId }).then(setData); }, [plotId]);
+  if (!data) return <div style={{ padding:"20px 0", color:"#64748b" }}>Loading profit share data...</div>;
+  if (!data.saleBreakdowns || data.saleBreakdowns.length === 0)
+    return <div className="empty">No sales recorded yet — profit share will appear once a sale is recorded.</div>;
+
+  return (
+    <div>
+      {data.saleBreakdowns.map((sale, si) => (
+        <div key={sale.saleId} style={{ marginBottom:28 }}>
+          {/* Sale header */}
+          <div style={{ background:"#0f172a", borderRadius:8, padding:"12px 16px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div>
+              <div style={{ fontWeight:700, color:"#e2e8f0" }}>Sale on {formatDate(sale.saleDate)}</div>
+              <div style={{ fontSize:"0.8rem", color:"#64748b", marginTop:2 }}>
+                {sale.sizePortionSqft} sq.ft · Sale Price: {formatCurrency(sale.salePrice)} · Broker Fee: {formatCurrency(sale.brokerFee)}
+              </div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:"0.75rem", color:"#64748b" }}>Net P&L</div>
+              <div style={{ fontSize:"1.2rem", fontWeight:700, color: sale.netProfitLoss>=0?"#4ade80":"#f87171" }}>
+                {formatCurrency(sale.netProfitLoss)}
+              </div>
+            </div>
+          </div>
+
+          {/* Share breakdown table */}
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Investor</th>
+                  <th>Committed</th>
+                  <th>Share %</th>
+                  <th>Principal Back</th>
+                  <th>Profit / Loss Share</th>
+                  <th>Total Received</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sale.shares.map((s, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight:600, color: s.investorId==="COMPANY"?"#a78bfa":"#e2e8f0" }}>{s.investorName}</td>
+                    <td>{formatCurrency(s.commitment)}</td>
+                    <td>{formatPercent(s.sharePercent)}</td>
+                    <td style={{ color:"#38bdf8" }}>{formatCurrency(s.principalReturn)}</td>
+                    <td style={{ color: s.profitShare>=0?"#4ade80":"#f87171", fontWeight:600 }}>{formatCurrency(s.profitShare)}</td>
+                    <td style={{ color:"#f59e0b", fontWeight:700 }}>{formatCurrency(s.totalReceived)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Plot Detail Panel ─────────────────────────────────────────
 function PlotDetail({ plotId, onClose, onRefresh }) {
   const [detail, setDetail] = useState(null);
-  const [modal, setModal] = useState(null); // { type, data? }
+  const [modal, setModal] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
   const { isAdmin } = useAuth();
 
   const load = useCallback(() => { API.get("getPlotDetail", { plotId }).then(setDetail); }, [plotId]);
@@ -258,23 +321,49 @@ function PlotDetail({ plotId, onClose, onRefresh }) {
       </div>
       <ProgressBar value={detail.totalFunded} max={detail.totalCost} label="Funding Progress" />
 
-      <div className="section-head">
-        <h3>Expenses Ledger</h3>
-        {isAdmin && <Button onClick={() => setModal({ type:"expense" })}>+ Add Expense</Button>}
+      {/* Tabs */}
+      <div style={{ display:"flex", gap:4, margin:"20px 0 0", borderBottom:"1px solid var(--border)" }}>
+        {[["overview","Overview"],["profitshare","Profit Share"],["sales","Sales"]].map(([key,label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} style={{
+            background:"none", border:"none", cursor:"pointer", padding:"8px 16px",
+            color: activeTab===key ? "var(--gold)" : "#64748b",
+            borderBottom: activeTab===key ? "2px solid var(--gold)" : "2px solid transparent",
+            fontWeight:600, fontSize:"0.85rem", transition:"all 0.15s"
+          }}>{label}</button>
+        ))}
       </div>
-      <Table cols={expCols} rows={detail.expenses} emptyMsg="No expenses added yet" />
 
-      <div className="section-head">
-        <h3>Investor Commitments</h3>
-        {isAdmin && <Button onClick={() => setModal({ type:"commitment" })}>+ Add Commitment</Button>}
-      </div>
-      <Table cols={cmmCols} rows={detail.commitments} emptyMsg="No commitments yet" />
+      {activeTab === "overview" && (
+        <div>
+          <div className="section-head">
+            <h3>Expenses Ledger</h3>
+            {isAdmin && <Button onClick={() => setModal({ type:"expense" })}>+ Add Expense</Button>}
+          </div>
+          <Table cols={expCols} rows={detail.expenses} emptyMsg="No expenses added yet" />
 
-      <div className="section-head">
-        <h3>Sales</h3>
-        {isAdmin && <Button variant="accent" onClick={() => setModal({ type:"sale" })}>Record Sale</Button>}
-      </div>
-      <Table cols={saleCols} rows={detail.sales} emptyMsg="No sales recorded" />
+          <div className="section-head">
+            <h3>Investor Commitments</h3>
+            {isAdmin && <Button onClick={() => setModal({ type:"commitment" })}>+ Add Commitment</Button>}
+          </div>
+          <Table cols={cmmCols} rows={detail.commitments} emptyMsg="No commitments yet" />
+        </div>
+      )}
+
+      {activeTab === "profitshare" && (
+        <div style={{ marginTop:20 }}>
+          <ProfitSharePanel plotId={plotId} />
+        </div>
+      )}
+
+      {activeTab === "sales" && (
+        <div>
+          <div className="section-head">
+            <h3>Sales</h3>
+            {isAdmin && <Button variant="accent" onClick={() => setModal({ type:"sale" })}>Record Sale</Button>}
+          </div>
+          <Table cols={saleCols} rows={detail.sales} emptyMsg="No sales recorded" />
+        </div>
+      )}
 
       {/* Modals */}
       {modal?.type === "plot"       && <PlotModal       existing={modal.data} onClose={() => setModal(null)} onDone={() => { load(); onRefresh(); }} />}
