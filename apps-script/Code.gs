@@ -22,16 +22,12 @@ function response(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// All requests come through doGet to avoid CORS preflight issues
 function doGet(e) {
   try {
     const action = e.parameter.action;
-    // POST-style actions send body as JSON in "data" param
-    const body = e.parameter.data ? JSON.parse(e.parameter.data) : {};
+    const body   = e.parameter.data ? JSON.parse(e.parameter.data) : {};
     const params = e.parameter;
-
     switch (action) {
-      // READ actions
       case "login":             return response(login(params));
       case "getPlots":          return response(getPlots());
       case "getPlotDetail":     return response(getPlotDetail(params.plotId));
@@ -40,7 +36,6 @@ function doGet(e) {
       case "getDashboard":      return response(getDashboard());
       case "getWallet":         return response(getWallet(params.investorId));
       case "getTransactions":   return response(getTransactions(params.investorId));
-      // WRITE actions (body comes via "data" param)
       case "addPlot":           return response(addPlot(body));
       case "addExpense":        return response(addExpense(body));
       case "addInvestor":       return response(addInvestor(body));
@@ -49,6 +44,18 @@ function doGet(e) {
       case "processWithdrawal": return response(processWithdrawal(body));
       case "reinvest":          return response(reinvest(body));
       case "updatePlotStatus":  return response(updatePlotStatus(body));
+      // ── EDIT actions ──────────────────────────────────────
+      case "editPlot":          return response(editRow(SHEETS.PLOTS, "plotId", body));
+      case "editExpense":       return response(editRow(SHEETS.EXPENSES, "expenseId", body));
+      case "editInvestor":      return response(editInvestor(body));
+      case "editCommitment":    return response(editCommitment(body));
+      case "editSale":          return response(editSale(body));
+      // ── DELETE actions ────────────────────────────────────
+      case "deletePlot":        return response(deletePlot(body));
+      case "deleteExpense":     return response(deleteRow(SHEETS.EXPENSES, "expenseId", body.expenseId));
+      case "deleteCommitment":  return response(deleteCommitment(body));
+      case "deleteSale":        return response(deleteSale(body));
+      case "deleteInvestor":    return response(deleteInvestor(body));
       default:                  return response({ error: "Unknown action: " + action });
     }
   } catch (err) {
@@ -56,7 +63,6 @@ function doGet(e) {
   }
 }
 
-// Keep doPost as fallback
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
@@ -99,9 +105,8 @@ function setupSheets() {
 
 // ── AUTH ──────────────────────────────────────────────────────
 function login(params) {
-  const sheet = getSheet(SHEETS.USERS);
-  const rows  = getRows(sheet);
-  const user  = rows.find(r => r.username === params.username && r.passwordHash === hashPassword(params.password));
+  const rows = getRows(getSheet(SHEETS.USERS));
+  const user = rows.find(r => r.username === params.username && r.passwordHash === hashPassword(params.password));
   if (!user) return { success: false, message: "Invalid credentials" };
   return { success: true, role: user.role, investorId: user.investorId, username: user.username };
 }
@@ -112,21 +117,53 @@ function hashPassword(pwd) {
   return "H" + Math.abs(hash).toString(36);
 }
 
+// ── GENERIC EDIT/DELETE HELPERS ───────────────────────────────
+function editRow(sheetName, idField, body) {
+  const sheet   = getSheet(sheetName);
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol   = headers.indexOf(idField);
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idCol] === body[idField]) {
+      headers.forEach((h, col) => {
+        if (h !== idField && h !== "createdAt" && body[h] !== undefined) {
+          sheet.getRange(i + 1, col + 1).setValue(body[h]);
+        }
+      });
+      return { success: true };
+    }
+  }
+  return { error: "Record not found" };
+}
+
+function deleteRow(sheetName, idField, idValue) {
+  const sheet   = getSheet(sheetName);
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol   = headers.indexOf(idField);
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idCol] === idValue) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { error: "Record not found" };
+}
+
 // ── PLOTS ──────────────────────────────────────────────────────
 function getPlots() {
   const plots    = getRows(getSheet(SHEETS.PLOTS));
   const expenses = getRows(getSheet(SHEETS.EXPENSES));
   const commits  = getRows(getSheet(SHEETS.COMMITMENTS));
   return plots.map(plot => {
-    const totalCost  = expenses.filter(e => e.plotId === plot.plotId).reduce((s,e) => s+Number(e.amount),0);
-    const totalFunded= commits.filter(c => c.plotId === plot.plotId).reduce((s,c) => s+Number(c.amount),0);
+    const totalCost   = expenses.filter(e => e.plotId === plot.plotId).reduce((s,e) => s+Number(e.amount),0);
+    const totalFunded = commits.filter(c => c.plotId === plot.plotId).reduce((s,c) => s+Number(c.amount),0);
     return { ...plot, totalCost, totalFunded, companyShare: Math.max(0, totalCost-totalFunded) };
   });
 }
 
 function getPlotDetail(plotId) {
-  const plots = getRows(getSheet(SHEETS.PLOTS));
-  const plot  = plots.find(p => p.plotId === plotId);
+  const plot = getRows(getSheet(SHEETS.PLOTS)).find(p => p.plotId === plotId);
   if (!plot) return { error: "Plot not found" };
   const expenses    = getRows(getSheet(SHEETS.EXPENSES)).filter(e => e.plotId === plotId);
   const commitments = getRows(getSheet(SHEETS.COMMITMENTS)).filter(c => c.plotId === plotId);
@@ -143,26 +180,33 @@ function getPlotDetail(plotId) {
 }
 
 function addPlot(body) {
-  const sheet  = getSheet(SHEETS.PLOTS);
   const plotId = "PLT-" + Date.now();
-  sheet.appendRow([plotId, body.name, body.location, body.sizeSqft, body.askingPrice, "Active", body.expectedTimeline, body.notes||"", new Date().toISOString()]);
+  getSheet(SHEETS.PLOTS).appendRow([plotId, body.name, body.location, body.sizeSqft, body.askingPrice, "Active", body.expectedTimeline||"", body.notes||"", new Date().toISOString()]);
   return { success: true, plotId };
 }
 
 function updatePlotStatus(body) {
-  const sheet = getSheet(SHEETS.PLOTS);
-  const data  = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === body.plotId) { sheet.getRange(i+1,6).setValue(body.status); return { success: true }; }
-  }
-  return { error: "Plot not found" };
+  return editRow(SHEETS.PLOTS, "plotId", { plotId: body.plotId, status: body.status });
+}
+
+function deletePlot(body) {
+  // Also delete related expenses, commitments, sales
+  const plotId = body.plotId;
+  [SHEETS.EXPENSES, SHEETS.COMMITMENTS, SHEETS.SALES].forEach(sheetName => {
+    const sheet   = getSheet(sheetName);
+    const data    = sheet.getDataRange().getValues();
+    const plotCol = data[0].indexOf("plotId");
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][plotCol] === plotId) sheet.deleteRow(i + 1);
+    }
+  });
+  return deleteRow(SHEETS.PLOTS, "plotId", plotId);
 }
 
 // ── EXPENSES ───────────────────────────────────────────────────
 function addExpense(body) {
-  const sheet     = getSheet(SHEETS.EXPENSES);
   const expenseId = "EXP-" + Date.now();
-  sheet.appendRow([expenseId, body.plotId, body.category, body.description, body.amount, body.receiptUrl||"", new Date().toISOString()]);
+  getSheet(SHEETS.EXPENSES).appendRow([expenseId, body.plotId, body.category, body.description, body.amount, body.receiptUrl||"", new Date().toISOString()]);
   return { success: true, expenseId };
 }
 
@@ -172,27 +216,24 @@ function getInvestors() {
   const wallets   = getRows(getSheet(SHEETS.WALLET));
   const commits   = getRows(getSheet(SHEETS.COMMITMENTS));
   return investors.map(inv => {
-    const wallet      = wallets.find(w => w.investorId === inv.investorId);
+    const wallet = wallets.find(w => w.investorId === inv.investorId);
     const totalInvested = commits.filter(c => c.investorId === inv.investorId).reduce((s,c) => s+Number(c.amount),0);
     return { ...inv, walletBalance: wallet ? Number(wallet.balance) : 0, totalInvested };
   });
 }
 
 function getInvestorDetail(investorId) {
-  const investors = getRows(getSheet(SHEETS.INVESTORS));
-  const inv       = investors.find(i => i.investorId === investorId);
+  const inv = getRows(getSheet(SHEETS.INVESTORS)).find(i => i.investorId === investorId);
   if (!inv) return { error: "Investor not found" };
   const commits = getRows(getSheet(SHEETS.COMMITMENTS)).filter(c => c.investorId === investorId);
   const wallet  = getRows(getSheet(SHEETS.WALLET)).find(w => w.investorId === investorId);
   const txns    = getRows(getSheet(SHEETS.TRANSACTIONS)).filter(t => t.investorId === investorId);
-  const totalInvested = commits.reduce((s,c) => s+Number(c.amount),0);
-  return { ...inv, commitments: commits, wallet: wallet||{balance:0}, transactions: txns, totalInvested };
+  return { ...inv, commitments: commits, wallet: wallet||{balance:0}, transactions: txns, totalInvested: commits.reduce((s,c)=>s+Number(c.amount),0) };
 }
 
 function addInvestor(body) {
-  const sheet      = getSheet(SHEETS.INVESTORS);
   const investorId = "INV-" + Date.now();
-  sheet.appendRow([investorId, body.name, body.email, body.phone, body.panNumber||"", body.bankName||"", body.accountNumber||"", body.ifscCode||"", new Date().toISOString()]);
+  getSheet(SHEETS.INVESTORS).appendRow([investorId, body.name, body.email, body.phone, body.panNumber||"", body.bankName||"", body.accountNumber||"", body.ifscCode||"", new Date().toISOString()]);
   getSheet(SHEETS.WALLET).appendRow(["WLT-"+Date.now(), investorId, 0, new Date().toISOString()]);
   if (body.password) {
     getSheet(SHEETS.USERS).appendRow(["USR-"+Date.now(), body.email, hashPassword(body.password), "investor", investorId, new Date().toISOString()]);
@@ -200,13 +241,49 @@ function addInvestor(body) {
   return { success: true, investorId };
 }
 
+function editInvestor(body) {
+  return editRow(SHEETS.INVESTORS, "investorId", body);
+}
+
+function deleteInvestor(body) {
+  const investorId = body.investorId;
+  // Delete wallet, commitments, transactions, user login
+  [SHEETS.WALLET, SHEETS.COMMITMENTS, SHEETS.TRANSACTIONS].forEach(sheetName => {
+    const sheet  = getSheet(sheetName);
+    const data   = sheet.getDataRange().getValues();
+    const invCol = data[0].indexOf("investorId");
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][invCol] === investorId) sheet.deleteRow(i + 1);
+    }
+  });
+  // Delete user login entry
+  const userSheet = getSheet(SHEETS.USERS);
+  const userData  = userSheet.getDataRange().getValues();
+  const invCol    = userData[0].indexOf("investorId");
+  for (let i = userData.length - 1; i >= 1; i--) {
+    if (userData[i][invCol] === investorId) userSheet.deleteRow(i + 1);
+  }
+  return deleteRow(SHEETS.INVESTORS, "investorId", investorId);
+}
+
 // ── COMMITMENTS ────────────────────────────────────────────────
 function addCommitment(body) {
-  const sheet = getSheet(SHEETS.COMMITMENTS);
-  const id    = "CMT-" + Date.now();
-  sheet.appendRow([id, body.plotId, body.investorId, body.amount, 0, new Date().toISOString()]);
+  const id = "CMT-" + Date.now();
+  getSheet(SHEETS.COMMITMENTS).appendRow([id, body.plotId, body.investorId, body.amount, 0, new Date().toISOString()]);
   recalculateShares(body.plotId);
   return { success: true, commitmentId: id };
+}
+
+function editCommitment(body) {
+  const result = editRow(SHEETS.COMMITMENTS, "commitmentId", body);
+  if (result.success) recalculateShares(body.plotId);
+  return result;
+}
+
+function deleteCommitment(body) {
+  const result = deleteRow(SHEETS.COMMITMENTS, "commitmentId", body.commitmentId);
+  if (result.success) recalculateShares(body.plotId);
+  return result;
 }
 
 function recalculateShares(plotId) {
@@ -224,7 +301,22 @@ function recalculateShares(plotId) {
 
 // ── SALES ──────────────────────────────────────────────────────
 function recordSale(body) {
-  const saleId     = "SAL-" + Date.now();
+  const saleId      = "SAL-" + Date.now();
+  const netRevenue  = Number(body.salePrice) - Number(body.brokerFee||0);
+  const expenses    = getRows(getSheet(SHEETS.EXPENSES)).filter(e => e.plotId === body.plotId);
+  const totalCost   = expenses.reduce((s,e) => s+Number(e.amount),0);
+  const plot        = getRows(getSheet(SHEETS.PLOTS)).find(p => p.plotId === body.plotId);
+  const plotSize    = Number(plot.sizeSqft)||1;
+  const soldSize    = Number(body.sizePortionSqft)||plotSize;
+  const costPortion = totalCost*(soldSize/plotSize);
+  const netPL       = netRevenue - costPortion;
+  getSheet(SHEETS.SALES).appendRow([saleId, body.plotId, body.saleDate, soldSize, body.salePrice, body.brokerFee||0, netRevenue, netPL, body.notes||"", new Date().toISOString()]);
+  distributeProceeds(body.plotId, saleId, netRevenue, netPL, costPortion);
+  return { success: true, saleId, netRevenue, netProfitLoss: netPL };
+}
+
+function editSale(body) {
+  // Recalculate derived fields
   const netRevenue = Number(body.salePrice) - Number(body.brokerFee||0);
   const expenses   = getRows(getSheet(SHEETS.EXPENSES)).filter(e => e.plotId === body.plotId);
   const totalCost  = expenses.reduce((s,e) => s+Number(e.amount),0);
@@ -233,21 +325,38 @@ function recordSale(body) {
   const soldSize   = Number(body.sizePortionSqft)||plotSize;
   const costPortion= totalCost*(soldSize/plotSize);
   const netPL      = netRevenue - costPortion;
-  getSheet(SHEETS.SALES).appendRow([saleId, body.plotId, body.saleDate, soldSize, body.salePrice, body.brokerFee||0, netRevenue, netPL, body.notes||"", new Date().toISOString()]);
-  distributeProceeds(body.plotId, saleId, netRevenue, netPL, costPortion);
-  return { success: true, saleId, netRevenue, netProfitLoss: netPL };
+  return editRow(SHEETS.SALES, "saleId", { ...body, netRevenue, netProfitLoss: netPL });
+}
+
+function deleteSale(body) {
+  // Reverse wallet distributions for this sale
+  const txSheet = getSheet(SHEETS.TRANSACTIONS);
+  const txData  = txSheet.getDataRange().getValues();
+  const txH     = txData[0];
+  const saleCol = txH.indexOf("saleId");
+  const invCol  = txH.indexOf("investorId");
+  const amtCol  = txH.indexOf("amount");
+  const walletSheet = getSheet(SHEETS.WALLET);
+
+  for (let i = txData.length - 1; i >= 1; i--) {
+    if (txData[i][saleCol] === body.saleId) {
+      // Reverse the wallet credit
+      updateWallet(txData[i][invCol], -Number(txData[i][amtCol]), walletSheet);
+      txSheet.deleteRow(i + 1);
+    }
+  }
+  return deleteRow(SHEETS.SALES, "saleId", body.saleId);
 }
 
 function distributeProceeds(plotId, saleId, netRevenue, netPL, costPortion) {
-  const commitments  = getRows(getSheet(SHEETS.COMMITMENTS)).filter(c => c.plotId === plotId);
-  const walletSheet  = getSheet(SHEETS.WALLET);
-  const txSheet      = getSheet(SHEETS.TRANSACTIONS);
+  const commitments    = getRows(getSheet(SHEETS.COMMITMENTS)).filter(c => c.plotId === plotId);
+  const walletSheet    = getSheet(SHEETS.WALLET);
+  const txSheet        = getSheet(SHEETS.TRANSACTIONS);
   const totalCommitted = commitments.reduce((s,c) => s+Number(c.amount),0);
   commitments.forEach(c => {
     const shareDecimal    = Number(c.sharePercent)/100;
     const principalReturn = totalCommitted > 0 ? Number(c.amount)*(costPortion/totalCommitted) : 0;
-    const profitShare     = netPL*shareDecimal;
-    const totalCredit     = principalReturn+profitShare;
+    const totalCredit     = principalReturn + (netPL*shareDecimal);
     updateWallet(c.investorId, totalCredit, walletSheet);
     txSheet.appendRow(["TX-"+Date.now()+"-"+c.investorId, c.investorId, plotId, saleId, netPL>=0?"PROFIT_DISTRIBUTION":"LOSS_DISTRIBUTION", totalCredit.toFixed(2), `Plot ${plotId} sale`, new Date().toISOString()]);
   });
@@ -258,8 +367,7 @@ function updateWallet(investorId, amount, walletSheet) {
   const h    = data[0];
   for (let i = 1; i < data.length; i++) {
     if (data[i][h.indexOf("investorId")] === investorId) {
-      const newBal = Number(data[i][h.indexOf("balance")])+amount;
-      walletSheet.getRange(i+1, h.indexOf("balance")+1).setValue(newBal.toFixed(2));
+      walletSheet.getRange(i+1, h.indexOf("balance")+1).setValue((Number(data[i][h.indexOf("balance")])+amount).toFixed(2));
       walletSheet.getRange(i+1, h.indexOf("lastUpdated")+1).setValue(new Date().toISOString());
       return;
     }
