@@ -2,7 +2,7 @@
 // After deploying your Google Apps Script as a Web App,
 // paste the deployment URL below:
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 export const API = {
   get: async (action, params = {}) => {

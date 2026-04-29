@@ -6,7 +6,6 @@ import Dashboard from "./pages/Dashboard";
 import Plots from "./pages/Plots";
 import Investors from "./pages/Investors";
 import MyPortfolio from "./pages/MyPortfolio";
-import "./App.css";
 
 function Layout() {
   const { user, logout, isAdmin } = useAuth();
