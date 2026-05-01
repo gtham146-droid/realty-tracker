@@ -114,6 +114,11 @@ function hashPassword(pwd) {
   return "H" + Math.abs(hash).toString(36);
 }
 
+// Google Sheets stores booleans as TRUE/FALSE strings — normalise here
+function isReinvest(val) {
+  return val === true || val === "TRUE" || val === 1 || val === "true";
+}
+
 // ── GENERIC HELPERS ────────────────────────────────────────────
 function editRow(sheetName, idField, body) {
   const sheet   = getSheet(sheetName);
@@ -259,7 +264,7 @@ function getInvestorReturns(investorId) {
     const totalCost  = plotExp.reduce((s,e)=>s+Number(e.amount),0);
     const plotSize   = Number(plot?.sizeSqft)||1;
     const shareDecimal = Number(c.sharePercent)/100;
-    const isReinvestment = c.isReinvestment===true || c.isReinvestment==="TRUE" || c.isReinvestment===1;
+    const isReinvestment = isReinvest(c.isReinvestment);
 
     const distributions = txns.filter(t=>t.plotId===c.plotId&&(t.type==="PROFIT_DISTRIBUTION"||t.type==="LOSS_DISTRIBUTION"));
     const totalReceived = distributions.reduce((s,t)=>s+Number(t.amount),0);
@@ -303,8 +308,8 @@ function getInvestors() {
   return investors.map(inv => {
     const wallet     = wallets.find(w=>w.investorId===inv.investorId);
     const invCommits = commits.filter(c=>c.investorId===inv.investorId);
-    const cashInvested   = invCommits.filter(c=>!(c.isReinvestment===true||c.isReinvestment==="TRUE"||c.isReinvestment===1)).reduce((s,c)=>s+Number(c.amount),0);
-    const reinvested     = invCommits.filter(c=>c.isReinvestment===true||c.isReinvestment==="TRUE"||c.isReinvestment===1).reduce((s,c)=>s+Number(c.amount),0);
+    const cashInvested   = invCommits.filter(c=>!(isReinvest(c.isReinvestment))).reduce((s,c)=>s+Number(c.amount),0);
+    const reinvested     = invCommits.filter(c=>isReinvest(c.isReinvestment)).reduce((s,c)=>s+Number(c.amount),0);
     const totalReturns   = txns.filter(t=>t.investorId===inv.investorId&&(t.type==="PROFIT_DISTRIBUTION"||t.type==="LOSS_DISTRIBUTION")).reduce((s,t)=>s+Number(t.amount),0);
     return { ...inv, walletBalance: wallet?Number(wallet.balance):0, cashInvested, reinvested, totalCommitted: cashInvested+reinvested, totalReturns };
   });
@@ -316,8 +321,8 @@ function getInvestorDetail(investorId) {
   const commits = getRows(getSheet(SHEETS.COMMITMENTS)).filter(c=>c.investorId===investorId);
   const wallet  = getRows(getSheet(SHEETS.WALLET)).find(w=>w.investorId===investorId);
   const txns    = getRows(getSheet(SHEETS.TRANSACTIONS)).filter(t=>t.investorId===investorId);
-  const cashInvested = commits.filter(c=>!(c.isReinvestment===true||c.isReinvestment==="TRUE"||c.isReinvestment===1)).reduce((s,c)=>s+Number(c.amount),0);
-  const reinvested   = commits.filter(c=>c.isReinvestment===true||c.isReinvestment==="TRUE"||c.isReinvestment===1).reduce((s,c)=>s+Number(c.amount),0);
+  const cashInvested = commits.filter(c=>!(isReinvest(c.isReinvestment))).reduce((s,c)=>s+Number(c.amount),0);
+  const reinvested   = commits.filter(c=>isReinvest(c.isReinvestment)).reduce((s,c)=>s+Number(c.amount),0);
   return { ...inv, commitments: commits, wallet: wallet||{balance:0}, transactions: txns, cashInvested, reinvested, totalCommitted: cashInvested+reinvested };
 }
 
@@ -492,22 +497,30 @@ function getDashboard() {
   const sales    = getRows(getSheet(SHEETS.SALES));
   const txns     = getRows(getSheet(SHEETS.TRANSACTIONS));
   const investors= getInvestors();
+  const commits  = getRows(getSheet(SHEETS.COMMITMENTS));
 
-  // Profit share summary per plot
+  // Total active funds = sum of all commitments in Active plots only
+  const activePlotIds  = plots.filter(p=>p.status==="Active").map(p=>p.plotId);
+  const totalActiveFunds = commits
+    .filter(c=>activePlotIds.indexOf(c.plotId)>-1)
+    .reduce((s,c)=>s+Number(c.amount),0);
+
+  // Profit share summary per plot (any plot with sales)
   const plotSummaries = plots.filter(p=>p.totalPL!==0||p.totalRevenue>0).map(p=>({
     plotId: p.plotId, plotName: p.name, status: p.status,
     totalCost: p.totalCost, totalRevenue: p.totalRevenue, totalPL: p.totalPL
   }));
 
   return {
-    totalPlots:     plots.length,
-    activePlots:    plots.filter(p=>p.status==="Active").length,
-    soldPlots:      plots.filter(p=>p.status==="Sold").length,
-    totalDeployed:  plots.reduce((s,p)=>s+(p.totalCost||0),0),
-    totalInWallets: wallets.reduce((s,w)=>s+Number(w.balance),0),
-    totalRevenue:   sales.reduce((s,s2)=>s+Number(s2.netRevenue||0),0),
-    totalPL:        sales.reduce((s,s2)=>s+Number(s2.netProfitLoss||0),0),
-    totalInvestors: investors.length,
+    totalPlots:      plots.length,
+    activePlots:     plots.filter(p=>p.status==="Active").length,
+    soldPlots:       plots.filter(p=>p.status==="Sold").length,
+    totalDeployed:   plots.reduce((s,p)=>s+(p.totalCost||0),0),
+    totalActiveFunds,
+    totalInWallets:  wallets.reduce((s,w)=>s+Number(w.balance),0),
+    totalRevenue:    sales.reduce((s,s2)=>s+Number(s2.netRevenue||0),0),
+    totalPL:         sales.reduce((s,s2)=>s+Number(s2.netProfitLoss||0),0),
+    totalInvestors:  investors.length,
     plotSummaries,
     recentTransactions: txns.slice(-10).reverse()
   };

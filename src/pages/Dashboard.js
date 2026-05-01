@@ -49,14 +49,15 @@ export default function Dashboard() {
       </div>
 
       <div className="stats-grid">
-        <StatCard label="Total Capital Deployed"   value={formatCurrency(data.totalDeployed)}  accent="#f59e0b" icon="🏗" />
-        <StatCard label="Total Net Revenue"        value={formatCurrency(data.totalRevenue)}   accent="#a78bfa" icon="💰" />
-        <StatCard label="Net P&L (All Sales)"      value={formatCurrency(data.totalPL)}
+        <StatCard label="Total Capital Deployed"    value={formatCurrency(data.totalDeployed)}    accent="#f59e0b" icon="🏗" sub="Across all plots" />
+        <StatCard label="Total Active Funds"        value={formatCurrency(data.totalActiveFunds)} accent="#38bdf8" icon="🔒" sub="Locked in active plots" />
+        <StatCard label="Funds in Investor Wallets" value={formatCurrency(data.totalInWallets)}   accent="#a78bfa" icon="👛" sub="Available to withdraw" />
+        <StatCard label="Total Net Revenue"         value={formatCurrency(data.totalRevenue)}     accent="#4ade80" icon="💰" />
+        <StatCard label="Net P&L (All Sales)"       value={formatCurrency(data.totalPL)}
           accent={data.totalPL>=0?"#4ade80":"#f87171"} sub={data.totalPL>=0?"Profitable":"Loss"} icon={data.totalPL>=0?"📈":"📉"} />
-        <StatCard label="Funds in Investor Wallets" value={formatCurrency(data.totalInWallets)} accent="#38bdf8" icon="👛" />
-        <StatCard label="Active Plots"             value={data.activePlots}
+        <StatCard label="Active Plots"              value={data.activePlots}
           sub={`${data.soldPlots} sold · ${data.totalPlots} total`} accent="#fb923c" icon="📍" />
-        <StatCard label="Total Investors"          value={data.totalInvestors||0}              accent="#e879f9" icon="👥" />
+        <StatCard label="Total Investors"           value={data.totalInvestors||0}               accent="#e879f9" icon="👥" />
       </div>
 
       {/* Profit Share Summary per Plot */}
