@@ -1,11 +1,11 @@
 import React from "react";
 import { HashRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./context/AuthContext";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Plots from "./pages/Plots";
-import Investors from "./pages/Investors";
-import MyPortfolio from "./pages/MyPortfolio";
+import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import Login from "./pages/Login.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+import Plots from "./pages/Plots.jsx";
+import Investors from "./pages/Investors.jsx";
+import MyPortfolio from "./pages/MyPortfolio.jsx";
 
 function Layout() {
   const { user, logout, isAdmin } = useAuth();
