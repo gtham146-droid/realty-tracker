@@ -317,9 +317,11 @@ function getInvestorReturns(investorId) {
   const trailTotalIn  = txCredits
   const trailTotalOut = txDebits + walletBalance
 
-  // Currently active funds = totalIn - withdrawn - wallet
-  // = money from wallet currently locked in plots
-  const activeFunds = txCredits - txDebits - walletBalance
+  // Currently active funds = ALL commitments in active/partially-sold plots
+  // Includes both cash and reinvested — money is still locked in regardless of source
+  const activeFunds = plotBreakdowns
+    .filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
+    .reduce((s,p) => s + p.commitment, 0)
 
   return {
     investorId, plotBreakdowns,
