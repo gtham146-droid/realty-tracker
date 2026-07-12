@@ -28,15 +28,15 @@ export default function MyPortfolio() {
 
   const walletBal = detail.wallet?.balance || 0
 
-  // Money Trail — transaction-based (always balanced regardless of plot status)
+  // Money Trail — clear summary of where money came from and where it is
   const trail = {
     cashInvested:     returns.cashInvested,
     profitEarned:     returns.profitCredits,
     adjustments:      returns.adjustments,
     totalIn:          returns.trailTotalIn,
-    activelyInvested: Math.max(0, returns.activeFunds),
+    activelyInvested: returns.activeFunds,
     reinvestedAmount: returns.reinvested,
-    withdrawn:        returns.withdrawals,
+    withdrawn:        returns.withdrawals,   // actual bank withdrawals only
     walletBalance:    walletBal,
     totalOut:         returns.trailTotalOut
   }

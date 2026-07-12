@@ -131,15 +131,15 @@ function ReturnsTab({ investorId }) {
   useEffect(() => { API.get('getInvestorReturns', { investorId }).then(setData) }, [investorId])
   if (!data) return <Loader />
 
-  // Money Trail — transaction-based (always balanced regardless of plot status)
+  // Money Trail — clear summary of where money came from and where it is
   const trail = {
     cashInvested:     data.cashInvested,
     profitEarned:     data.profitCredits,
     adjustments:      data.adjustments,
     totalIn:          data.trailTotalIn,
-    activelyInvested: Math.max(0, data.activeFunds),
+    activelyInvested: data.activeFunds,
     reinvestedAmount: data.reinvested,
-    withdrawn:        data.withdrawals,
+    withdrawn:        data.withdrawals,      // actual bank withdrawals only
     walletBalance:    data.walletBalance,
     totalOut:         data.trailTotalOut
   }

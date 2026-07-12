@@ -301,36 +301,41 @@ function getInvestorReturns(investorId) {
   const totalReturns=plotBreakdowns.reduce((s,p)=>s+p.totalReceived,0)
   const walletBalance=wallet?num(wallet.balance):0
 
-  // Transaction-based totals — used for Money Trail reconciliation
-  // This is always accurate regardless of plot status (active/partial/sold)
-  const txCredits=txns.filter(t=>num(t.amount)>0).reduce((s,t)=>s+num(t.amount),0)
-  const txDebits =txns.filter(t=>num(t.amount)<0).reduce((s,t)=>s+Math.abs(num(t.amount)),0)
+  // Separate actual bank withdrawals from reinvestments
+  // Reinvestments are internal wallet movements — NOT money leaving the system
+  const allWithdrawals=txns.filter(t=>t.type==='WITHDRAWAL').reduce((s,t)=>s+Math.abs(num(t.amount)),0)
+  const reinvestmentWithdrawals=plotBreakdowns
+    .filter(p=>isTruthy(p.isReinvestment))
+    .reduce((s,p)=>s+p.commitment,0)
+  // Actual bank withdrawals = total withdrawals minus money reinvested into plots
+  const bankWithdrawals=Math.max(0, allWithdrawals - reinvestmentWithdrawals)
+
   const adjustments=txns.filter(t=>t.type==='ADJUSTMENT').reduce((s,t)=>s+num(t.amount),0)
-  const profitCredits=txns.filter(t=>t.type==='PROFIT_DISTRIBUTION'||t.type==='LOSS_DISTRIBUTION').reduce((s,t)=>s+num(t.amount),0)
-  // withdrawals = money that actually LEFT (including reinvestments out of wallet)
-  const withdrawals=txns.filter(t=>t.type==='WITHDRAWAL').reduce((s,t)=>s+Math.abs(num(t.amount)),0)
+  // Only actual profit/loss (not principal returns)
+  const profitOnly=totalPLShare
 
-  // For Money Trail:
-  // totalIn  = all credits (profits + positive adjustments) = txCredits
-  // totalOut = all debits (withdrawals/reinvestments) + current wallet
-  // These must balance: totalIn === totalOut (wallet is what's left)
-  const trailTotalIn  = txCredits
-  const trailTotalOut = txDebits + walletBalance
+  // Active funds = all commitments still in active/partially-sold/on-hold plots
+  const activeFunds=plotBreakdowns
+    .filter(p=>['Active','Partially Sold','On Hold'].includes(p.plotStatus))
+    .reduce((s,p)=>s+p.commitment,0)
 
-  // Currently active funds = ALL commitments in active/partially-sold plots
-  // Includes both cash and reinvested — money is still locked in regardless of source
-  const activeFunds = plotBreakdowns
-    .filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
-    .reduce((s,p) => s + p.commitment, 0)
+  // Money Trail summary (informational — shows where every rupee is)
+  // IN:  cashInvested + profitOnly + adjustments
+  // OUT: activeFunds + bankWithdrawals + wallet
+  const trailIn  = cashInvested + profitOnly + adjustments
+  const trailOut = activeFunds + bankWithdrawals + walletBalance
 
   return {
     investorId, plotBreakdowns,
-    // Commitment-based (for display in per-plot table)
     cashInvested, reinvested, totalCommitted: cashInvested+reinvested,
     totalPLShare, totalReturns,
-    // Transaction-based (for Money Trail — always balanced)
-    trailTotalIn, trailTotalOut, activeFunds,
-    withdrawals, adjustments, profitCredits, walletBalance
+    // Money Trail fields
+    trailTotalIn:  trailIn,
+    trailTotalOut: trailOut,
+    activeFunds, bankWithdrawals,
+    adjustments, profitCredits: profitOnly,
+    withdrawals: bankWithdrawals,
+    walletBalance
   }
 }
 

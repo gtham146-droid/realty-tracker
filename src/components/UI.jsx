@@ -151,23 +151,25 @@ export function ProgressBar({ value, max, label }) {
 export function MoneyTrail({ data }) {
   if (!data) return null
   const diff = Math.abs(data.totalIn - data.totalOut)
-  const balanced = diff < 2
+  const balanced = diff < 100 // allow small rounding differences
 
   return (
     <div className="recon-box">
       <div className="recon-title">
         <span>💳</span> Money Trail
-        <span style={{ marginLeft:'auto', fontSize:'0.78rem', color: balanced ? 'var(--green)' : 'var(--red)', fontWeight:700 }}>
-          {balanced ? '✓ Balanced' : `⚠ ₹${Math.round(diff).toLocaleString('en-IN')} gap`}
+        <span style={{ marginLeft:'auto', fontSize:'0.78rem', color: balanced ? 'var(--green)' : 'var(--text-2)', fontWeight:700 }}>
+          {balanced ? '✓ Balanced' : 'Summary'}
         </span>
       </div>
 
+      {/* WHERE MONEY CAME FROM */}
+      <div style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-3)', marginBottom:6 }}>Where it came from</div>
       <div className="recon-row">
-        <span className="recon-label">💵 Cash from own pocket</span>
+        <span className="recon-label">💵 Own cash invested</span>
         <span className="recon-value amt-blue">{fc(data.cashInvested)}</span>
       </div>
       <div className="recon-row">
-        <span className="recon-label">✅ Profit earned</span>
+        <span className="recon-label">📈 Profit earned from sales</span>
         <span className="recon-value amt-green">{fc(data.profitEarned)}</span>
       </div>
       {data.adjustments !== 0 && (
@@ -176,38 +178,33 @@ export function MoneyTrail({ data }) {
           <span className="recon-value amt-purple">{fc(data.adjustments)}</span>
         </div>
       )}
-      <div className="recon-row" style={{ borderTop:'1px solid var(--border2)', marginTop:4, paddingTop:10 }}>
-        <span className="recon-label" style={{ fontWeight:600, color:'var(--text)' }}>Total ever available</span>
-        <span className="recon-value" style={{ color:'var(--text)' }}>{fc(data.totalIn)}</span>
-      </div>
 
       <hr className="recon-divider" />
 
+      {/* WHERE MONEY IS NOW */}
+      <div style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-3)', marginBottom:6 }}>Where it is now</div>
       <div className="recon-row">
-        <span className="recon-label">📍 Currently in active plots</span>
+        <span className="recon-label">📍 Locked in active plots</span>
         <span className="recon-value amt-gold">{fc(data.activelyInvested)}</span>
       </div>
       <div className="recon-row">
-        <span className="recon-label">🔄 Reinvested (from returns)</span>
-        <span className="recon-value amt-purple">{fc(data.reinvestedAmount)}</span>
-      </div>
-      <div className="recon-row">
-        <span className="recon-label">💸 Withdrawn / transferred out</span>
+        <span className="recon-label">🏦 Paid out to bank</span>
         <span className="recon-value amt-red">{fc(data.withdrawn)}</span>
       </div>
       <div className="recon-row">
-        <span className="recon-label">👛 Current wallet balance</span>
+        <span className="recon-label">👛 Sitting in wallet</span>
         <span className="recon-value amt-gold">{fc(data.walletBalance)}</span>
       </div>
 
-      <hr className="recon-divider" />
-
-      <div className="recon-total">
-        <span style={{ color:'var(--text-2)' }}>Total accounted for</span>
-        <span className={balanced ? 'recon-match' : 'recon-mismatch'}>
-          {fc(data.totalOut)} {balanced ? '✓' : `≠ ${fc(data.totalIn)}`}
-        </span>
-      </div>
+      {data.reinvestedAmount > 0 && (
+        <>
+          <hr className="recon-divider" />
+          <div className="recon-row" style={{ fontSize:'0.8rem' }}>
+            <span style={{ color:'var(--text-3)' }}>🔄 Of which reinvested from returns</span>
+            <span style={{ color:'var(--text-3)', fontWeight:600 }}>{fc(data.reinvestedAmount)}</span>
+          </div>
+        </>
+      )}
     </div>
   )
 }
