@@ -1,348 +1,307 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { API, formatCurrency, formatDate, formatPercent } from "../config";
-import { Card, Table, Modal, Button, Field, Input, Loader, StatCard, Badge } from "../components/UI";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState, useCallback } from 'react'
+import { API, fc, fd, fp, isTruthy } from '../config'
+import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Textarea, Confirm, ActionBtns, MoneyTrail, TxTypeBadge } from '../components/UI'
+import { useAuth } from '../context/AuthContext'
 
-function ConfirmModal({ message, onConfirm, onClose }) {
-  return (
-    <Modal title="Confirm Delete" onClose={onClose}>
-      <p style={{ marginBottom:20, color:"#cbd5e1" }}>{message}</p>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button style={{ background:"#dc2626" }} onClick={onConfirm}>Yes, Delete</Button>
-      </div>
-    </Modal>
-  );
-}
-
-function ActionBtns({ onEdit, onDelete }) {
-  return (
-    <div style={{ display:"flex", gap:6 }} onClick={e => e.stopPropagation()}>
-      <button onClick={onEdit}   style={{ background:"#1e3a5f", border:"1px solid #2a4a7f", color:"#60a5fa", borderRadius:4, padding:"3px 10px", cursor:"pointer", fontSize:"0.78rem" }}>Edit</button>
-      <button onClick={onDelete} style={{ background:"#3b1111", border:"1px solid #7f2a2a", color:"#f87171", borderRadius:4, padding:"3px 10px", cursor:"pointer", fontSize:"0.78rem" }}>Delete</button>
-    </div>
-  );
-}
-
-// ── Add/Edit Investor Modal ───────────────────────────────────
+/* ── Investor Modal ────────────────────────────────────────── */
 function InvestorModal({ existing, onClose, onDone }) {
-  const isEdit = !!existing;
-  const [f, setF] = useState(existing || { name:"", email:"", phone:"", panNumber:"", bankName:"", accountNumber:"", ifscCode:"", password:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+  const isEdit = !!existing
+  const [f, setF] = useState(existing || { name: '', email: '', phone: '', panNumber: '', bankName: '', accountNumber: '', ifscCode: '', password: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
 
   const submit = async () => {
-    setLoading(true);
-    const res = await API.post(isEdit ? "editInvestor" : "addInvestor", f);
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
+    setBusy(true)
+    const res = await API.post(isEdit ? 'editInvestor' : 'addInvestor', f)
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
 
   return (
-    <Modal title={isEdit ? "Edit Investor" : "Add New Investor"} onClose={onClose} wide>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <Field label="Full Name" required><Input value={f.name} onChange={set("name")} /></Field>
-        <Field label="Email" required><Input type="email" value={f.email} onChange={set("email")} /></Field>
-        <Field label="Phone"><Input value={f.phone||""} onChange={set("phone")} /></Field>
-        <Field label="PAN Number"><Input value={f.panNumber||""} onChange={set("panNumber")} /></Field>
-      </div>
-      <div style={{ margin:"16px 0 8px", fontWeight:600, color:"#64748b", fontSize:"0.8rem", textTransform:"uppercase", letterSpacing:"0.05em" }}>Bank Details</div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <Field label="Bank Name"><Input value={f.bankName||""} onChange={set("bankName")} /></Field>
-        <Field label="IFSC Code"><Input value={f.ifscCode||""} onChange={set("ifscCode")} /></Field>
-        <Field label="Account Number"><Input value={f.accountNumber||""} onChange={set("accountNumber")} /></Field>
-        {!isEdit && <Field label="Login Password" hint="For investor portal"><Input type="password" value={f.password||""} onChange={set("password")} placeholder="Leave blank to skip" /></Field>}
-      </div>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{isEdit ? "Save Changes" : "Add Investor"}</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Wallet Adjustment Modal ───────────────────────────────────
-function WalletAdjustModal({ investor, onClose, onDone }) {
-  const [f, setF] = useState({ adjustmentAmount:"", reason:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-
-  const submit = async () => {
-    if (!f.adjustmentAmount || !f.reason.trim()) { alert("Amount and reason are required"); return; }
-    setLoading(true);
-    const res = await API.post("adjustWallet", { investorId: investor.investorId, adjustmentAmount: f.adjustmentAmount, reason: f.reason });
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
-
-  const newBal = (Number(investor.walletBalance) + Number(f.adjustmentAmount||0));
-
-  return (
-    <Modal title="Manual Wallet Adjustment" onClose={onClose}>
-      <div style={{ background:"#0f172a", borderRadius:8, padding:12, marginBottom:16 }}>
-        <div style={{ fontSize:"0.8rem", color:"#64748b" }}>Current Balance</div>
-        <div style={{ fontSize:"1.4rem", fontWeight:700, color:"#f59e0b" }}>{formatCurrency(investor.walletBalance)}</div>
-      </div>
-      <Field label="Adjustment Amount (₹)" hint="Use negative to deduct, positive to add" required>
-        <Input type="number" value={f.adjustmentAmount} onChange={set("adjustmentAmount")} placeholder="e.g. 5000 or -2000" />
-      </Field>
-      {f.adjustmentAmount && (
-        <div style={{ background:"#0f172a", borderRadius:8, padding:10, marginBottom:12, fontSize:"0.85rem" }}>
-          New balance: <strong style={{ color: newBal>=0?"#4ade80":"#f87171" }}>{formatCurrency(newBal)}</strong>
+    <Modal title={isEdit ? 'Edit Investor' : 'Add Investor'} onClose={onClose} wide>
+      <div className="form-stack">
+        <div className="form-grid">
+          <Field label="Full Name *"><Input value={f.name} onChange={set('name')} /></Field>
+          <Field label="Email *"><Input type="email" value={f.email} onChange={set('email')} placeholder="Gmail for SSO login" /></Field>
+          <Field label="Phone"><Input value={f.phone || ''} onChange={set('phone')} /></Field>
+          <Field label="PAN Number"><Input value={f.panNumber || ''} onChange={set('panNumber')} /></Field>
         </div>
-      )}
-      <Field label="Reason / Note" required>
-        <Input value={f.reason} onChange={set("reason")} placeholder="e.g. Correction for double entry on plot X" />
-      </Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>Apply Adjustment</Button>
+        <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-2)', marginTop: 4 }}>Bank Details</div>
+        <div className="form-grid">
+          <Field label="Bank Name"><Input value={f.bankName || ''} onChange={set('bankName')} /></Field>
+          <Field label="IFSC Code"><Input value={f.ifscCode || ''} onChange={set('ifscCode')} /></Field>
+          <Field label="Account Number"><Input value={f.accountNumber || ''} onChange={set('accountNumber')} /></Field>
+          {!isEdit && <Field label="Fallback Password" hint="Optional — for non-Google login"><Input type="password" value={f.password || ''} onChange={set('password')} /></Field>}
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Add Investor'}</Btn>
+        </div>
       </div>
     </Modal>
-  );
+  )
 }
 
-// ── Wallet Action Modal (withdraw / reinvest) ─────────────────
-function WalletModal({ investor, action, onClose, onDone }) {
-  const [plots, setPlots] = useState([]);
-  const [f, setF] = useState({ amount:"", plotId:"", notes:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  useEffect(() => { if (action==="reinvest") API.get("getPlots").then(d => setPlots(Array.isArray(d)?d.filter(p=>p.status==="Active"):[])); }, [action]);
+/* ── Wallet Adjust Modal ───────────────────────────────────── */
+function AdjustModal({ investor, onClose, onDone }) {
+  const [f, setF] = useState({ adjustmentAmount: '', reason: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+  const newBal = Number(investor.walletBalance) + Number(f.adjustmentAmount || 0)
 
   const submit = async () => {
-    setLoading(true);
-    const res = await API.post(action==="withdraw"?"processWithdrawal":"reinvest", { ...f, investorId: investor.investorId });
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
+    if (!f.adjustmentAmount || !f.reason.trim()) return alert('Amount and reason required')
+    setBusy(true)
+    const res = await API.post('adjustWallet', { investorId: investor.investorId, adjustmentAmount: f.adjustmentAmount, reason: f.reason })
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
 
   return (
-    <Modal title={action==="withdraw"?"Process Withdrawal":"Reinvest Funds"} onClose={onClose}>
-      <div style={{ background:"#0f172a", borderRadius:8, padding:12, marginBottom:16 }}>
-        <div style={{ fontSize:"0.8rem", color:"#64748b" }}>Wallet Balance</div>
-        <div style={{ fontSize:"1.4rem", fontWeight:700, color:"#f59e0b" }}>{formatCurrency(investor.walletBalance)}</div>
-      </div>
-      <Field label="Amount (₹)" required><Input type="number" value={f.amount} onChange={set("amount")} max={investor.walletBalance} /></Field>
-      {action==="reinvest" && (
-        <Field label="Target Plot" required>
-          <select className="input" value={f.plotId} onChange={set("plotId")}>
-            <option value="">Select active plot...</option>
-            {plots.map(p=><option key={p.plotId} value={p.plotId}>{p.name} — {p.location}</option>)}
-          </select>
+    <Modal title="Adjust Wallet Balance" onClose={onClose}>
+      <div className="form-stack">
+        <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>Current Balance</div>
+          <div className="amt-gold" style={{ fontSize: '1.3rem', fontWeight: 700 }}>{fc(investor.walletBalance)}</div>
+        </div>
+        <Field label="Adjustment (₹)" hint="Positive to add, negative to deduct">
+          <Input type="number" value={f.adjustmentAmount} onChange={set('adjustmentAmount')} placeholder="e.g. 5000 or -2000" />
         </Field>
-      )}
-      <Field label="Notes"><Input value={f.notes} onChange={set("notes")} /></Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{action==="withdraw"?"Process Withdrawal":"Reinvest"}</Button>
+        {f.adjustmentAmount && (
+          <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', fontSize: '0.85rem' }}>
+            New balance: <strong className={newBal >= 0 ? 'amt-green' : 'amt-red'}>{fc(newBal)}</strong>
+          </div>
+        )}
+        <Field label="Reason *">
+          <Input value={f.reason} onChange={set('reason')} placeholder="e.g. Correction for double entry" />
+        </Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>Apply</Btn>
+        </div>
       </div>
     </Modal>
-  );
+  )
 }
 
-// ── Returns Breakdown Panel ───────────────────────────────────
-function ReturnsPanel({ investorId }) {
-  const [data, setData] = useState(null);
-  useEffect(() => { API.get("getInvestorReturns", { investorId }).then(setData); }, [investorId]);
-  if (!data) return <div style={{ padding:"20px 0", color:"#64748b" }}>Loading returns...</div>;
+/* ── Wallet Action Modal (withdraw / reinvest) ─────────────── */
+function WalletModal({ investor, action, onClose, onDone }) {
+  const [plots, setPlots] = useState([])
+  const [f, setF] = useState({ amount: '', plotId: '', notes: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+  useEffect(() => { if (action === 'reinvest') API.get('getPlots').then(d => setPlots(Array.isArray(d) ? d.filter(p => p.status === 'Active') : [])) }, [action])
 
-  const cols = [
-    { key:"plotName", label:"Plot" },
-    { key:"plotStatus", label:"Status", render: r => {
-      const map={Active:"active",Sold:"sold","Partially Sold":"partial","On Hold":"hold"};
-      return <Badge text={r.plotStatus} type={map[r.plotStatus]||"default"} />;
-    }},
-    { key:"commitment", label:"Committed", render: r => formatCurrency(r.commitment) },
-    { key:"isReinvestment", label:"Source", render: r => (
-      <span style={{ fontSize:"0.75rem", color: r.isReinvestment?"#a78bfa":"#38bdf8", fontWeight:600 }}>
-        {r.isReinvestment ? "Reinvested" : "Cash"}
-      </span>
-    )},
-    { key:"sharePercent", label:"Share %", render: r => formatPercent(r.sharePercent) },
-    { key:"profitLossShare", label:"P&L Share", render: r => (
-      <span style={{ color: r.profitLossShare>=0?"#4ade80":"#f87171", fontWeight:700 }}>{formatCurrency(r.profitLossShare)}</span>
-    )},
-    { key:"totalReceived", label:"Total Received", render: r => (
-      <span style={{ color:"#f59e0b", fontWeight:700 }}>{formatCurrency(r.totalReceived)}</span>
-    )},
-    { key:"salesCount", label:"Sales" }
-  ];
+  const submit = async () => {
+    setBusy(true)
+    const res = await API.post(action === 'withdraw' ? 'processWithdrawal' : 'reinvest', { ...f, investorId: investor.investorId })
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
+
+  return (
+    <Modal title={action === 'withdraw' ? 'Process Withdrawal' : 'Reinvest Funds'} onClose={onClose}>
+      <div className="form-stack">
+        <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>Available Balance</div>
+          <div className="amt-gold" style={{ fontSize: '1.3rem', fontWeight: 700 }}>{fc(investor.walletBalance)}</div>
+        </div>
+        <Field label="Amount (₹) *"><Input type="number" value={f.amount} onChange={set('amount')} max={investor.walletBalance} /></Field>
+        {action === 'reinvest' && (
+          <Field label="Target Plot *">
+            <select className="input" value={f.plotId} onChange={set('plotId')}>
+              <option value="">Select active plot...</option>
+              {plots.map(p => <option key={p.plotId} value={p.plotId}>{p.name} — {p.location}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Notes"><Input value={f.notes} onChange={set('notes')} placeholder="Optional note" /></Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{action === 'withdraw' ? '💸 Withdraw' : '🔄 Reinvest'}</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Returns Tab with Money Trail ──────────────────────────── */
+function ReturnsTab({ investorId }) {
+  const [data, setData] = useState(null)
+  useEffect(() => { API.get('getInvestorReturns', { investorId }).then(setData) }, [investorId])
+  if (!data) return <Loader />
+
+  // Build money trail data
+  const trail = {
+    cashInvested:     data.cashInvested,
+    profitEarned:     data.totalPLShare,
+    adjustments:      data.adjustments,
+    totalIn:          data.cashInvested + Math.max(0, data.totalPLShare) + data.adjustments,
+    activelyInvested: data.plotBreakdowns.filter(p => p.plotStatus === 'Active' && !isTruthy(p.isReinvestment)).reduce((s, p) => s + p.commitment, 0),
+    reinvestedAmount: data.reinvested,
+    withdrawn:        data.withdrawals,
+    walletBalance:    data.walletBalance,
+    totalOut:         0
+  }
+  // Active + reinvested_active + withdrawn + wallet = total out
+  const activeReinvest = data.plotBreakdowns.filter(p => p.plotStatus === 'Active' && isTruthy(p.isReinvestment)).reduce((s, p) => s + p.commitment, 0)
+  trail.activelyInvested += activeReinvest
+  trail.totalOut = trail.activelyInvested + trail.withdrawn + trail.walletBalance
+
+  const plotCols = [
+    { key: 'plotName', label: 'Plot', render: r => <span style={{ fontWeight: 600 }}>{r.plotName}</span> },
+    { key: 'plotStatus', label: 'Status', render: r => <StatusBadge status={r.plotStatus} /> },
+    { key: 'commitment', label: 'Committed', render: r => fc(r.commitment) },
+    { key: 'isReinvestment', label: 'Source', render: r => isTruthy(r.isReinvestment) ? <Badge text="Reinvested" type="reinvest" /> : <Badge text="Cash" type="cash" /> },
+    { key: 'sharePercent', label: 'Share %', render: r => fp(r.sharePercent) },
+    { key: 'profitLossShare', label: 'P&L Share', render: r => <span className={r.profitLossShare >= 0 ? 'amt-green' : 'amt-red'}>{fc(r.profitLossShare)}</span> },
+    { key: 'totalReceived', label: 'Received', render: r => <span className="amt-gold">{fc(r.totalReceived)}</span> },
+  ]
 
   return (
     <div>
-      {/* Summary cards */}
-      <div className="stats-grid" style={{ gridTemplateColumns:"repeat(3,1fr)", marginBottom:16 }}>
-        <StatCard label="Cash from Pocket" value={formatCurrency(data.cashInvested)} accent="#38bdf8"
-          sub="Actual money invested" />
-        <StatCard label="Reinvested from Returns" value={formatCurrency(data.reinvested)} accent="#a78bfa"
-          sub="Profits put back in" />
-        <StatCard label="Total P&L Share" value={formatCurrency(data.totalPLShare)}
-          accent={data.totalPLShare>=0?"#4ade80":"#f87171"}
-          sub={data.totalPLShare>=0?"Overall profit":"Overall loss"} />
+      <MoneyTrail data={trail} />
+
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 20 }}>
+        <StatCard label="Cash from Pocket" value={fc(data.cashInvested)} sub="Own money invested" accent="var(--blue)" />
+        <StatCard label="Reinvested (from returns)" value={fc(data.reinvested)} sub="Not own money" accent="var(--purple)" />
+        <StatCard label="Net ROI on Cash" value={data.cashInvested > 0 ? `${((data.totalPLShare / data.cashInvested) * 100).toFixed(1)}%` : '—'} sub="Profit ÷ cash invested" accent="var(--green)" />
       </div>
-      <div className="stats-grid" style={{ gridTemplateColumns:"repeat(3,1fr)", marginBottom:20 }}>
-        <StatCard label="Total Received (incl. principal)" value={formatCurrency(data.totalReturns)} accent="#f59e0b" />
-        <StatCard label="Total Withdrawn" value={formatCurrency(data.withdrawals)} accent="#fb923c" />
-        <StatCard label="Net ROI" value={data.cashInvested>0 ? `${((data.totalPLShare/data.cashInvested)*100).toFixed(1)}%` : "—"}
-          accent="#e879f9" sub="On cash invested" />
-      </div>
-      <Table cols={cols} rows={data.plotBreakdowns} emptyMsg="No investments yet" />
+
+      <div className="section-head"><span className="section-title">Per Plot Breakdown</span></div>
+      <DataTable cols={plotCols} rows={data.plotBreakdowns} emptyMsg="No investments yet" emptyIcon="📊" />
     </div>
-  );
+  )
 }
 
-// ── Investor Detail ───────────────────────────────────────────
+/* ── Investor Detail ───────────────────────────────────────── */
 function InvestorDetail({ investorId, onClose, onRefresh }) {
-  const [detail, setDetail]     = useState(null);
-  const [modal, setModal]       = useState(null);
-  const [confirm, setConfirm]   = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
-  const { isAdmin } = useAuth();
+  const [detail, setDetail] = useState(null)
+  const [tab, setTab] = useState('overview')
+  const [modal, setModal] = useState(null)
+  const [confirm, setConfirm] = useState(null)
+  const { isAdmin } = useAuth()
 
-  const load = useCallback(() => { API.get("getInvestorDetail", { investorId }).then(setDetail); }, [investorId]);
-  useEffect(() => { load(); }, [load]);
-  if (!detail) return <Loader />;
+  const load = useCallback(() => API.get('getInvestorDetail', { investorId }).then(setDetail), [investorId])
+  useEffect(() => { load() }, [load])
+  if (!detail) return <Loader />
 
-  const txnCols = [
-    { key:"createdAt", label:"Date", render: r => formatDate(r.createdAt) },
-    { key:"type", label:"Type", render: r => {
-      const colors={PROFIT_DISTRIBUTION:"#4ade80",LOSS_DISTRIBUTION:"#f87171",WITHDRAWAL:"#fb923c",ADJUSTMENT:"#a78bfa",REINVESTMENT:"#38bdf8"};
-      return <span style={{ color:colors[r.type]||"#94a3b8", fontWeight:600, fontSize:"0.78rem" }}>{r.type.replace(/_/g," ")}</span>;
-    }},
-    { key:"amount", label:"Amount", render: r => (
-      <span style={{ color:Number(r.amount)>=0?"#4ade80":"#f87171", fontWeight:600 }}>{formatCurrency(r.amount)}</span>
-    )},
-    { key:"description", label:"Description" }
-  ];
+  const walletBal = detail.wallet?.balance || 0
 
-  const tabs = ["overview","returns","transactions"];
+  const txCols = [
+    { key: 'createdAt', label: 'Date', render: r => <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{fd(r.createdAt)}</span> },
+    { key: 'type', label: 'Type', render: r => <TxTypeBadge type={r.type} /> },
+    { key: 'amount', label: 'Amount', render: r => <span className={Number(r.amount) >= 0 ? 'amt-green' : 'amt-red'}>{fc(r.amount)}</span> },
+    { key: 'description', label: 'Description', render: r => <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{r.description}</span> }
+  ]
 
   return (
     <div className="detail-panel">
       <div className="detail-header">
         <div>
-          <h2>{detail.name}</h2>
-          <span style={{ color:"#64748b" }}>{detail.email} · {detail.phone}</span>
+          <div className="detail-title">{detail.name}</div>
+          <div className="detail-sub">{detail.email} {detail.phone ? `· ${detail.phone}` : ''}</div>
         </div>
-        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-          {isAdmin && <Button onClick={() => setModal("edit")}>Edit</Button>}
-          {isAdmin && (
-            <Button style={{ background:"#3b1111", border:"1px solid #7f2a2a", color:"#f87171" }}
-              onClick={() => setConfirm({
-                message: `Delete investor "${detail.name}"? This removes their wallet, commitments and transaction history.`,
-                onConfirm: async () => { setConfirm(null); const res = await API.post("deleteInvestor",{investorId}); if(res.success){onClose();onRefresh();}else alert(res.error); }
-              })}>Delete</Button>
-          )}
+        <div className="detail-actions">
+          {isAdmin && <Btn variant="ghost" sm onClick={() => setModal('edit')}>Edit</Btn>}
+          {isAdmin && <Btn variant="danger" sm onClick={() => setConfirm({
+            msg: `Delete "${detail.name}"? Removes wallet, commitments, and all transaction history.`,
+            onConfirm: async () => { setConfirm(null); const res = await API.post('deleteInvestor', { investorId }); if (res.success) { onClose(); onRefresh?.() } else alert(res.error) }
+          })}>Delete</Btn>}
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
       </div>
 
-      {/* Top stat row */}
-      <div className="stats-grid" style={{ gridTemplateColumns:"repeat(4,1fr)", marginBottom:20 }}>
-        <StatCard label="Wallet Balance"         value={formatCurrency(detail.wallet?.balance)}  accent="#f59e0b" />
-        <StatCard label="Cash from Pocket"       value={formatCurrency(detail.cashInvested)}     accent="#38bdf8" sub="Own money invested" />
-        <StatCard label="Reinvested from Returns"value={formatCurrency(detail.reinvested)}       accent="#a78bfa" sub="Profits put back in" />
-        <StatCard label="Total Committed"        value={formatCurrency(detail.totalCommitted)}   accent="#fb923c" sub="Cash + reinvested" />
+      {/* Top summary row */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
+        <StatCard label="Wallet Balance" value={fc(walletBal)} accent="var(--gold)" />
+        <StatCard label="Cash Invested" value={fc(detail.cashInvested)} sub="Own pocket" accent="var(--blue)" />
+        <StatCard label="Reinvested" value={fc(detail.reinvested)} sub="From returns" accent="var(--purple)" />
+        <StatCard label="Total Committed" value={fc(detail.totalCommitted)} sub="Cash + reinvested" accent="var(--text-2)" />
       </div>
 
-      {/* Tabs */}
-      <div style={{ display:"flex", gap:4, marginBottom:20, borderBottom:"1px solid var(--border)", paddingBottom:0 }}>
-        {tabs.map(t => (
-          <button key={t} onClick={() => setActiveTab(t)} style={{
-            background:"none", border:"none", cursor:"pointer", padding:"8px 16px",
-            color: activeTab===t ? "var(--gold)" : "#64748b",
-            borderBottom: activeTab===t ? "2px solid var(--gold)" : "2px solid transparent",
-            fontWeight:600, fontSize:"0.85rem", textTransform:"capitalize", transition:"all 0.15s"
-          }}>{t}</button>
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          <Btn sm onClick={() => setModal('withdraw')}>💸 Withdraw</Btn>
+          <Btn sm variant="accent" onClick={() => setModal('reinvest')}>🔄 Reinvest</Btn>
+          <Btn sm variant="ghost" onClick={() => setModal('adjust')}>⚖️ Adjust Wallet</Btn>
+        </div>
+      )}
+
+      <div className="tabs">
+        {[['overview', 'Overview'], ['returns', 'Money Trail'], ['transactions', 'Transactions']].map(([k, l]) => (
+          <button key={k} className={`tab-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
 
-      {activeTab === "overview" && (
-        <div>
-          {isAdmin && (
-            <div style={{ display:"flex", gap:10, marginBottom:20 }}>
-              <Button onClick={() => setModal("withdraw")}>💸 Withdraw</Button>
-              <Button variant="accent" onClick={() => setModal("reinvest")}>🔄 Reinvest</Button>
-              <Button variant="ghost" onClick={() => setModal("adjust")}>⚖️ Adjust Wallet</Button>
-            </div>
-          )}
-          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:8, padding:16 }}>
-            <div style={{ fontSize:"0.8rem", color:"#64748b", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>KYC & Bank Details</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 24px", fontSize:"0.85rem" }}>
-              {[["PAN",detail.panNumber],["Bank",detail.bankName],["Account",detail.accountNumber],["IFSC",detail.ifscCode]].map(([l,v])=>(
-                <div key={l}><span style={{ color:"#64748b" }}>{l}: </span><span style={{ color:"#e2e8f0" }}>{v||"—"}</span></div>
-              ))}
-            </div>
+      {tab === 'overview' && (
+        <div style={{ background: 'var(--surface2)', borderRadius: 10, padding: 16 }}>
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-2)', marginBottom: 12 }}>KYC & Bank Details</div>
+          <div className="form-grid" style={{ fontSize: '0.85rem', gap: '8px 24px' }}>
+            {[['PAN', detail.panNumber], ['Bank', detail.bankName], ['Account', detail.accountNumber], ['IFSC', detail.ifscCode]].map(([l, v]) => (
+              <div key={l}><span style={{ color: 'var(--text-2)' }}>{l}: </span><span>{v || '—'}</span></div>
+            ))}
           </div>
         </div>
       )}
 
-      {activeTab === "returns" && <ReturnsPanel investorId={investorId} />}
+      {tab === 'returns' && <ReturnsTab investorId={investorId} />}
 
-      {activeTab === "transactions" && (
-        <Table cols={txnCols} rows={detail.transactions} emptyMsg="No transactions yet" />
+      {tab === 'transactions' && (
+        <DataTable cols={txCols} rows={detail.transactions} emptyMsg="No transactions" emptyIcon="📋" />
       )}
 
-      {modal==="edit"     && <InvestorModal existing={detail} onClose={()=>setModal(null)} onDone={()=>{load();onRefresh();}} />}
-      {modal==="withdraw" && <WalletModal investor={{...detail,walletBalance:detail.wallet?.balance||0}} action="withdraw" onClose={()=>setModal(null)} onDone={load} />}
-      {modal==="reinvest" && <WalletModal investor={{...detail,walletBalance:detail.wallet?.balance||0}} action="reinvest" onClose={()=>setModal(null)} onDone={load} />}
-      {modal==="adjust"   && <WalletAdjustModal investor={{...detail,walletBalance:detail.wallet?.balance||0}} onClose={()=>setModal(null)} onDone={load} />}
-      {confirm && <ConfirmModal message={confirm.message} onConfirm={confirm.onConfirm} onClose={()=>setConfirm(null)} />}
+      {modal === 'edit'     && <InvestorModal existing={detail} onClose={() => setModal(null)} onDone={() => { load(); onRefresh?.() }} />}
+      {modal === 'withdraw' && <WalletModal investor={{ ...detail, walletBalance: walletBal }} action="withdraw" onClose={() => setModal(null)} onDone={load} />}
+      {modal === 'reinvest' && <WalletModal investor={{ ...detail, walletBalance: walletBal }} action="reinvest" onClose={() => setModal(null)} onDone={load} />}
+      {modal === 'adjust'   && <AdjustModal investor={{ ...detail, walletBalance: walletBal }} onClose={() => setModal(null)} onDone={load} />}
+      {confirm && <Confirm message={confirm.msg} onConfirm={confirm.onConfirm} onClose={() => setConfirm(null)} />}
     </div>
-  );
+  )
 }
 
-// ── Main Investors Page ───────────────────────────────────────
+/* ── Main Investors Page ───────────────────────────────────── */
 export default function Investors() {
-  const [investors, setInvestors] = useState([]);
-  const [selected, setSelected]   = useState(null);
-  const [showAdd, setShowAdd]     = useState(false);
-  const [loading, setLoading]     = useState(true);
-  const { isAdmin } = useAuth();
+  const [investors, setInvestors] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const { isAdmin } = useAuth()
 
   const load = useCallback(() => {
-    setLoading(true);
-    API.get("getInvestors").then(d => { setInvestors(Array.isArray(d)?d:[]); setLoading(false); });
-  }, []);
-  useEffect(() => { load(); }, [load]);
+    setLoading(true)
+    API.get('getInvestors').then(d => { setInvestors(Array.isArray(d) ? d : []); setLoading(false) })
+  }, [])
+  useEffect(() => { load() }, [load])
 
   const cols = [
-    { key:"name", label:"Name" },
-    { key:"email", label:"Email" },
-    { key:"cashInvested", label:"Cash Invested", render: r => (
-      <span title="Actual money from investor's own pocket">{formatCurrency(r.cashInvested)}</span>
-    )},
-    { key:"reinvested", label:"Reinvested", render: r => (
-      <span style={{ color:"#a78bfa" }} title="Profits reinvested back">{formatCurrency(r.reinvested)}</span>
-    )},
-    { key:"totalReturns", label:"Returns Received", render: r => (
-      <span style={{ color:"#4ade80" }}>{formatCurrency(r.totalReturns)}</span>
-    )},
-    { key:"walletBalance", label:"Wallet", render: r => (
-      <span style={{ color:"#f59e0b", fontWeight:600 }}>{formatCurrency(r.walletBalance)}</span>
-    )},
-    { key:"createdAt", label:"Joined", render: r => formatDate(r.createdAt) }
-  ];
+    { key: 'name', label: 'Name', render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
+    { key: 'cashInvested', label: 'Cash Invested', render: r => <span className="amt-blue" title="Money from own pocket">{fc(r.cashInvested)}</span> },
+    { key: 'reinvested', label: 'Reinvested', render: r => <span className="amt-purple" title="From returns, not own money">{fc(r.reinvested)}</span> },
+    { key: 'totalReturns', label: 'Returns Received', render: r => <span className="amt-green">{fc(r.totalReturns)}</span> },
+    { key: 'walletBalance', label: 'Wallet', render: r => <span className="amt-gold">{fc(r.walletBalance)}</span> },
+    { key: 'createdAt', label: 'Joined', render: r => <span className="amt-muted">{fd(r.createdAt)}</span> }
+  ]
+
+  if (loading) return <Loader />
 
   return (
     <div className="page">
       <div className="page-header">
-        <div><h2>Investors</h2><span className="page-sub">{investors.length} registered</span></div>
-        {isAdmin && <Button onClick={() => setShowAdd(true)}>+ Add Investor</Button>}
+        <div>
+          <div className="page-title">Investors</div>
+          <div className="page-sub">{investors.length} registered</div>
+        </div>
+        {isAdmin && <Btn onClick={() => setShowAdd(true)}>+ Add</Btn>}
       </div>
 
-      {loading ? <Loader /> : (
-        selected ? (
-          <InvestorDetail investorId={selected} onClose={() => setSelected(null)} onRefresh={load} />
-        ) : (
-          <Card>
-            <Table cols={cols} rows={investors} onRowClick={r=>setSelected(r.investorId)} emptyMsg="No investors yet." />
-          </Card>
-        )
+      {selected ? (
+        <InvestorDetail investorId={selected} onClose={() => setSelected(null)} onRefresh={load} />
+      ) : (
+        <DataTable cols={cols} rows={investors} onRowClick={r => setSelected(r.investorId)} emptyMsg="No investors yet" emptyIcon="👥" />
       )}
 
       {showAdd && <InvestorModal onClose={() => setShowAdd(false)} onDone={load} />}
     </div>
-  );
+  )
 }

@@ -1,173 +1,215 @@
-import React, { useState } from "react";
-import { formatCurrency } from "../config";
+import React, { useState } from 'react'
+import { fc } from '../config'
 
-// ── Card ─────────────────────────────────────────────────────
-export function Card({ children, className = "", onClick }) {
-  return (
-    <div
-      className={`card ${className}`}
-      onClick={onClick}
-      style={onClick ? { cursor: "pointer" } : {}}
-    >
-      {children}
-    </div>
-  );
+export function Loader() {
+  return <div className="loader-wrap"><div className="spinner spinner-lg" /></div>
 }
 
-// ── Stat Card ─────────────────────────────────────────────────
-export function StatCard({ label, value, sub, accent, icon }) {
+export function StatCard({ label, value, sub, icon, accent = 'var(--gold)' }) {
   return (
-    <div className="stat-card" style={{ borderTop: `3px solid ${accent || "var(--gold)"}` }}>
-      <div className="stat-icon">{icon}</div>
+    <div className="stat-card" style={{ '--accent': accent }}>
+      {icon && <div className="stat-icon">{icon}</div>}
       <div className="stat-value">{value}</div>
       <div className="stat-label">{label}</div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
-  );
+  )
 }
 
-// ── Badge ─────────────────────────────────────────────────────
-export function Badge({ text, type = "default" }) {
-  const colors = {
-    active:   { bg: "#0d2b1a", color: "#4ade80" },
-    sold:     { bg: "#1a1a2e", color: "#a78bfa" },
-    partial:  { bg: "#2b1a0d", color: "#fb923c" },
-    hold:     { bg: "#1a2020", color: "#94a3b8" },
-    profit:   { bg: "#0d2b1a", color: "#4ade80" },
-    loss:     { bg: "#2b0d0d", color: "#f87171" },
-    default:  { bg: "#1e293b", color: "#94a3b8" }
-  };
-  const s = colors[type] || colors.default;
-  return (
-    <span style={{
-      background: s.bg, color: s.color, border: `1px solid ${s.color}44`,
-      padding: "2px 10px", borderRadius: "999px", fontSize: "0.72rem",
-      fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase"
-    }}>
-      {text}
-    </span>
-  );
+export function Badge({ text, type = 'default' }) {
+  const cls = { active: 'badge-active', sold: 'badge-sold', partial: 'badge-partial', hold: 'badge-hold', cash: 'badge-cash', reinvest: 'badge-reinvest' }
+  return <span className={`badge ${cls[type] || 'badge-hold'}`}>{text}</span>
 }
 
-// ── Modal ─────────────────────────────────────────────────────
+export function StatusBadge({ status }) {
+  const map = { Active: 'active', Sold: 'sold', 'Partially Sold': 'partial', 'On Hold': 'hold' }
+  return <Badge text={status} type={map[status] || 'hold'} />
+}
+
+export function TxTypeBadge({ type }) {
+  const cfg = {
+    PROFIT_DISTRIBUTION: { label: 'Profit', color: 'var(--green)' },
+    LOSS_DISTRIBUTION:   { label: 'Loss',   color: 'var(--red)' },
+    WITHDRAWAL:          { label: 'Withdrawal', color: '#fb923c' },
+    ADJUSTMENT:          { label: 'Adjustment', color: 'var(--purple)' },
+    REINVESTMENT:        { label: 'Reinvest', color: 'var(--blue)' },
+  }
+  const c = cfg[type] || { label: type, color: 'var(--text-2)' }
+  return <span style={{ color: c.color, fontWeight: 700, fontSize: '0.75rem' }}>{c.label}</span>
+}
+
 export function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal"
-        style={{ maxWidth: wide ? 700 : 480 }}
-        onClick={e => e.stopPropagation()}
-      >
+    <div className="overlay" onClick={onClose}>
+      <div className={`modal ${wide ? 'modal-wide' : ''}`} onClick={e => e.stopPropagation()}>
+        <div className="modal-handle" />
         <div className="modal-header">
-          <h3>{title}</h3>
+          <span className="modal-title">{title}</span>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
       </div>
     </div>
-  );
+  )
 }
 
-// ── Form Field ────────────────────────────────────────────────
-export function Field({ label, required, children, hint }) {
+export function Field({ label, hint, children, span }) {
   return (
-    <div className="field">
-      <label>{label}{required && <span style={{ color: "var(--gold)" }}> *</span>}</label>
+    <div className="field" style={span ? { gridColumn: 'span 2' } : {}}>
+      {label && <label className="field-label">{label}</label>}
       {children}
       {hint && <span className="field-hint">{hint}</span>}
     </div>
-  );
+  )
 }
 
-// ── Input ─────────────────────────────────────────────────────
 export function Input(props) {
-  return <input className="input" {...props} />;
+  return <input className="input" {...props} />
 }
 
-// ── Select ────────────────────────────────────────────────────
 export function Select({ children, ...props }) {
-  return <select className="input" {...props}>{children}</select>;
+  return <select className="input" {...props}>{children}</select>
 }
 
-// ── Textarea ──────────────────────────────────────────────────
 export function Textarea(props) {
-  return <textarea className="input" rows={3} {...props} />;
+  return <textarea className="input" {...props} />
 }
 
-// ── Button ────────────────────────────────────────────────────
-export function Button({ children, variant = "primary", loading, ...props }) {
+export function Btn({ children, variant = 'primary', loading, sm, ...props }) {
   return (
-    <button className={`btn btn-${variant}`} disabled={loading || props.disabled} {...props}>
+    <button className={`btn btn-${variant}${sm ? ' btn-sm' : ''}`} disabled={loading || props.disabled} {...props}>
       {loading ? <span className="spinner" /> : children}
     </button>
-  );
+  )
 }
 
-// ── Table ─────────────────────────────────────────────────────
-export function Table({ cols, rows, onRowClick, emptyMsg = "No data" }) {
-  if (!rows || rows.length === 0) return <div className="empty">{emptyMsg}</div>;
+export function ActionBtns({ onEdit, onDelete }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+      <Btn variant="ghost" sm onClick={onEdit}>Edit</Btn>
+      <Btn variant="danger" sm onClick={onDelete}>Delete</Btn>
+    </div>
+  )
+}
+
+export function Confirm({ message, onConfirm, onClose }) {
+  return (
+    <Modal title="Confirm" onClose={onClose}>
+      <p style={{ color: 'var(--text-2)', marginBottom: 20, lineHeight: 1.6 }}>{message}</p>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant="danger" onClick={onConfirm}>Confirm Delete</Btn>
+      </div>
+    </Modal>
+  )
+}
+
+export function DataTable({ cols, rows, onRowClick, emptyMsg = 'No data yet', emptyIcon = '📭' }) {
+  if (!rows?.length) {
+    return (
+      <div className="card">
+        <div className="empty-state">
+          <div className="empty-icon">{emptyIcon}</div>
+          {emptyMsg}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="table-wrap">
-      <table className="table">
+      <table>
         <thead>
           <tr>{cols.map(c => <th key={c.key || c.label}>{c.label}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} onClick={() => onRowClick && onRowClick(row)} style={onRowClick ? { cursor: "pointer" } : {}}>
-              {cols.map(c => (
-                <td key={c.key || c.label}>
-                  {c.render ? c.render(row) : row[c.key]}
-                </td>
-              ))}
+            <tr key={i} className={onRowClick ? 'clickable' : ''} onClick={() => onRowClick?.(row)}>
+              {cols.map(c => <td key={c.key || c.label}>{c.render ? c.render(row) : row[c.key]}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-  );
+  )
 }
 
-// ── Loader ────────────────────────────────────────────────────
-export function Loader() {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
-      <div className="spinner large" />
-    </div>
-  );
-}
-
-// ── Progress Bar ──────────────────────────────────────────────
 export function ProgressBar({ value, max, label }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
   return (
-    <div>
-      {label && <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginBottom: 4 }}>
-        <span>{label}</span><span>{pct.toFixed(1)}%</span>
-      </div>}
-      <div style={{ background: "#1e293b", borderRadius: 4, height: 8, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "var(--gold)", borderRadius: 4, transition: "width 0.6s ease" }} />
+    <div className="progress-wrap">
+      <div className="progress-labels">
+        <span>{label}</span>
+        <span>{pct.toFixed(1)}%</span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
-  );
+  )
 }
 
-// ── Confirm Dialog ────────────────────────────────────────────
-export function useConfirm() {
-  const [state, setState] = useState(null);
-  const confirm = (msg) => new Promise(resolve => setState({ msg, resolve }));
-  const ConfirmDialog = () => !state ? null : (
-    <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: 360 }}>
-        <div className="modal-body" style={{ textAlign: "center" }}>
-          <p style={{ marginBottom: 20 }}>{state.msg}</p>
-          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-            <Button variant="ghost" onClick={() => { state.resolve(false); setState(null); }}>Cancel</Button>
-            <Button onClick={() => { state.resolve(true); setState(null); }}>Confirm</Button>
-          </div>
+// Money trail reconciliation box
+export function MoneyTrail({ data }) {
+  if (!data) return null
+  const diff = Math.abs(data.totalIn - data.totalOut)
+  const balanced = diff < 2 // allow 1 rupee rounding
+
+  return (
+    <div className="recon-box">
+      <div className="recon-title">
+        <span>💳</span> Money Trail
+        {balanced
+          ? <span style={{ color: 'var(--green)', marginLeft: 'auto', fontSize: '0.8rem' }}>✓ Balanced</span>
+          : <span style={{ color: 'var(--red)', marginLeft: 'auto', fontSize: '0.8rem' }}>⚠ ₹{diff.toFixed(0)} gap</span>
+        }
+      </div>
+
+      <div className="recon-row">
+        <span className="recon-label">💵 Cash from own pocket</span>
+        <span className="recon-value amt-blue">{fc(data.cashInvested)}</span>
+      </div>
+      <div className="recon-row">
+        <span className="recon-label">✅ Profit earned</span>
+        <span className="recon-value amt-green">{fc(data.profitEarned)}</span>
+      </div>
+      {data.adjustments !== 0 && (
+        <div className="recon-row">
+          <span className="recon-label">⚖️ Manual adjustments</span>
+          <span className="recon-value amt-purple">{fc(data.adjustments)}</span>
         </div>
+      )}
+      <div className="recon-row">
+        <span className="recon-label" style={{ fontWeight: 600, color: 'var(--text)' }}>Total ever available</span>
+        <span className="recon-value" style={{ color: 'var(--text)' }}>{fc(data.totalIn)}</span>
+      </div>
+
+      <hr className="recon-divider" />
+
+      <div className="recon-row">
+        <span className="recon-label">📍 Currently in active plots</span>
+        <span className="recon-value amt-gold">{fc(data.activelyInvested)}</span>
+      </div>
+      <div className="recon-row">
+        <span className="recon-label">🔄 Reinvested (from returns)</span>
+        <span className="recon-value amt-purple">{fc(data.reinvestedAmount)}</span>
+      </div>
+      <div className="recon-row">
+        <span className="recon-label">💸 Withdrawn / transferred out</span>
+        <span className="recon-value amt-red">{fc(data.withdrawn)}</span>
+      </div>
+      <div className="recon-row">
+        <span className="recon-label">👛 Current wallet balance</span>
+        <span className="recon-value amt-gold">{fc(data.walletBalance)}</span>
+      </div>
+
+      <hr className="recon-divider" />
+
+      <div className="recon-total">
+        <span style={{ color: 'var(--text-2)' }}>Total accounted for</span>
+        <span className={balanced ? 'recon-match' : 'recon-mismatch'}>
+          {fc(data.totalOut)} {balanced ? '✓' : '≠ ' + fc(data.totalIn)}
+        </span>
       </div>
     </div>
-  );
-  return { confirm, ConfirmDialog };
+  )
 }

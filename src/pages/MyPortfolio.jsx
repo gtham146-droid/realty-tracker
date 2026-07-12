@@ -1,70 +1,88 @@
-import React, { useEffect, useState } from "react";
-import { API, formatCurrency, formatDate, formatPercent } from "../config";
-import { StatCard, Card, Table, Loader } from "../components/UI";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState } from 'react'
+import { API, fc, fd, fp, isTruthy } from '../config'
+import { Loader, StatCard, DataTable, StatusBadge, Badge, TxTypeBadge, MoneyTrail } from '../components/UI'
+import { useAuth } from '../context/AuthContext'
 
 export default function MyPortfolio() {
-  const { user } = useAuth();
-  const [detail, setDetail] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth()
+  const [detail, setDetail] = useState(null)
+  const [returns, setReturns] = useState(null)
+  const [tab, setTab] = useState('trail')
 
   useEffect(() => {
-    if (user?.investorId) {
-      API.get("getInvestorDetail", { investorId: user.investorId })
-        .then(d => { setDetail(d); setLoading(false); });
-    } else {
-      setLoading(false);
-    }
-  }, [user]);
+    if (!user?.investorId) return
+    API.get('getInvestorDetail', { investorId: user.investorId }).then(setDetail)
+    API.get('getInvestorReturns', { investorId: user.investorId }).then(setReturns)
+  }, [user])
 
-  if (loading) return <Loader />;
-  if (!user?.investorId) return <div className="page"><p style={{ color: "#64748b" }}>No investor profile linked to this account.</p></div>;
+  if (!user?.investorId) return (
+    <div className="page">
+      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-2)' }}>
+        <div style={{ fontSize: '2rem', marginBottom: 12 }}>👋</div>
+        No investor profile linked to your account. Contact admin.
+      </div>
+    </div>
+  )
 
-  const totalROI = detail?.transactions?.filter(t => t.type === "PROFIT_DISTRIBUTION").reduce((s, t) => s + Number(t.amount), 0) || 0;
+  if (!detail || !returns) return <Loader />
 
-  const txnCols = [
-    { key: "createdAt", label: "Date", render: r => formatDate(r.createdAt) },
-    { key: "type", label: "Type" },
-    { key: "amount", label: "Amount", render: r => (
-      <span style={{ color: Number(r.amount) >= 0 ? "#4ade80" : "#f87171", fontWeight: 600 }}>
-        {formatCurrency(r.amount)}
-      </span>
-    )},
-    { key: "description", label: "Description" }
-  ];
+  const walletBal = detail.wallet?.balance || 0
 
-  const cmmCols = [
-    { key: "plotId", label: "Plot ID" },
-    { key: "amount", label: "Committed", render: r => formatCurrency(r.amount) },
-    { key: "sharePercent", label: "Ownership", render: r => formatPercent(r.sharePercent) },
-    { key: "createdAt", label: "Since", render: r => formatDate(r.createdAt) }
-  ];
+  const trail = {
+    cashInvested:     returns.cashInvested,
+    profitEarned:     returns.totalPLShare,
+    adjustments:      returns.adjustments,
+    totalIn:          returns.cashInvested + Math.max(0, returns.totalPLShare) + returns.adjustments,
+    activelyInvested: returns.plotBreakdowns.reduce((s, p) => p.plotStatus === 'Active' ? s + p.commitment : s, 0),
+    reinvestedAmount: returns.reinvested,
+    withdrawn:        returns.withdrawals,
+    walletBalance:    walletBal,
+    totalOut:         0
+  }
+  trail.totalOut = trail.activelyInvested + trail.withdrawn + trail.walletBalance
+
+  const txCols = [
+    { key: 'createdAt', label: 'Date', render: r => <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{fd(r.createdAt)}</span> },
+    { key: 'type', label: 'Type', render: r => <TxTypeBadge type={r.type} /> },
+    { key: 'amount', label: 'Amount', render: r => <span className={Number(r.amount) >= 0 ? 'amt-green' : 'amt-red'}>{fc(r.amount)}</span> },
+    { key: 'description', label: 'Note', render: r => <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{r.description}</span> }
+  ]
+
+  const plotCols = [
+    { key: 'plotName', label: 'Plot', render: r => <span style={{ fontWeight: 600 }}>{r.plotName}</span> },
+    { key: 'plotStatus', label: 'Status', render: r => <StatusBadge status={r.plotStatus} /> },
+    { key: 'commitment', label: 'My Commitment', render: r => fc(r.commitment) },
+    { key: 'isReinvestment', label: 'Source', render: r => isTruthy(r.isReinvestment) ? <Badge text="Reinvested" type="reinvest" /> : <Badge text="Cash" type="cash" /> },
+    { key: 'sharePercent', label: 'Share %', render: r => fp(r.sharePercent) },
+    { key: 'profitLossShare', label: 'My P&L', render: r => <span className={r.profitLossShare >= 0 ? 'amt-green' : 'amt-red'}>{fc(r.profitLossShare)}</span> },
+    { key: 'totalReceived', label: 'Received', render: r => <span className="amt-gold">{fc(r.totalReceived)}</span> }
+  ]
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>My Portfolio</h2>
-          <span className="page-sub">{detail?.name}</span>
+          <div className="page-title">My Portfolio</div>
+          <div className="page-sub">{detail.name}</div>
         </div>
       </div>
 
       <div className="stats-grid">
-        <StatCard label="Wallet Balance" value={formatCurrency(detail?.wallet?.balance)} accent="#f59e0b" icon="👛" />
-        <StatCard label="Total Invested" value={formatCurrency(detail?.totalInvested)} accent="#a78bfa" icon="💼" />
-        <StatCard label="Total Profit Received" value={formatCurrency(totalROI)} accent="#4ade80" icon="📈" />
-        <StatCard label="Active Positions" value={detail?.commitments?.length || 0} accent="#38bdf8" icon="📍" />
+        <StatCard label="Wallet Balance" value={fc(walletBal)} accent="var(--gold)" icon="👛" />
+        <StatCard label="Cash Invested" value={fc(returns.cashInvested)} sub="My own money" accent="var(--blue)" icon="💵" />
+        <StatCard label="Total Profit" value={fc(returns.totalPLShare)} accent="var(--green)" icon="📈" />
+        <StatCard label="Net ROI" value={returns.cashInvested > 0 ? `${((returns.totalPLShare / returns.cashInvested) * 100).toFixed(1)}%` : '—'} sub="On cash invested" accent="var(--purple)" icon="🎯" />
       </div>
 
-      <div style={{ marginTop: 32 }}>
-        <h3 style={{ marginBottom: 16 }}>My Investments</h3>
-        <Card><Table cols={cmmCols} rows={detail?.commitments} emptyMsg="No active investments" /></Card>
+      <div className="tabs">
+        {[['trail', 'Money Trail'], ['plots', 'My Investments'], ['transactions', 'Transactions']].map(([k, l]) => (
+          <button key={k} className={`tab-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
+        ))}
       </div>
 
-      <div style={{ marginTop: 32 }}>
-        <h3 style={{ marginBottom: 16 }}>Transaction History</h3>
-        <Card><Table cols={txnCols} rows={detail?.transactions} emptyMsg="No transactions yet" /></Card>
-      </div>
+      {tab === 'trail' && <MoneyTrail data={trail} />}
+      {tab === 'plots' && <DataTable cols={plotCols} rows={returns.plotBreakdowns} emptyMsg="No investments yet" emptyIcon="📊" />}
+      {tab === 'transactions' && <DataTable cols={txCols} rows={detail.transactions} emptyMsg="No transactions" emptyIcon="📋" />}
     </div>
-  );
+  )
 }

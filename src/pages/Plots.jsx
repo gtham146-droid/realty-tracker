@@ -1,226 +1,204 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { API, formatCurrency, formatDate, EXPENSE_CATEGORIES, formatPercent } from "../config";
-import { Card, Table, Badge, Modal, Button, Field, Input, Select, Textarea, StatCard, ProgressBar, Loader } from "../components/UI";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState, useCallback } from 'react'
+import { API, fc, fd, fp, EXPENSE_CATS, isTruthy } from '../config'
+import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Select, Textarea, ActionBtns, Confirm, ProgressBar } from '../components/UI'
+import { useAuth } from '../context/AuthContext'
 
-function statusBadge(s) {
-  const map = { Active:"active", Sold:"sold", "Partially Sold":"partial", "On Hold":"hold" };
-  return <Badge text={s} type={map[s]||"default"} />;
+/* ── Small helpers ─────────────────────────────────────────── */
+function PL({ v }) {
+  const n = Number(v)
+  return <span className={n >= 0 ? 'amt-green' : 'amt-red'}>{fc(n)}</span>
 }
 
-// ── Confirm Delete ────────────────────────────────────────────
-function ConfirmModal({ message, onConfirm, onClose }) {
-  return (
-    <Modal title="Confirm Delete" onClose={onClose}>
-      <p style={{ marginBottom: 20, color: "#cbd5e1" }}>{message}</p>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button style={{ background:"#dc2626" }} onClick={onConfirm}>Yes, Delete</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Add/Edit Plot Modal ───────────────────────────────────────
+/* ── Plot Modal (add / edit) ───────────────────────────────── */
 function PlotModal({ existing, onClose, onDone }) {
-  const isEdit = !!existing;
-  const [f, setF] = useState(existing || { name:"", location:"", sizeSqft:"", askingPrice:"", expectedTimeline:"", notes:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+  const isEdit = !!existing
+  const [f, setF] = useState(existing || { name: '', location: '', sizeSqft: '', askingPrice: '', status: 'Active', expectedTimeline: '', notes: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
 
   const submit = async () => {
-    setLoading(true);
-    const res = await API.post(isEdit ? "editPlot" : "addPlot", f);
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
+    if (!f.name || !f.location) return alert('Name and location required')
+    setBusy(true)
+    const res = await API.post(isEdit ? 'editPlot' : 'addPlot', f)
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
 
   return (
-    <Modal title={isEdit ? "Edit Plot" : "Add New Plot Project"} onClose={onClose}>
-      <Field label="Plot Name / Title" required><Input value={f.name} onChange={set("name")} /></Field>
-      <Field label="Location" required><Input value={f.location} onChange={set("location")} /></Field>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <Field label="Size (Sq.Ft)" required><Input type="number" value={f.sizeSqft} onChange={set("sizeSqft")} /></Field>
-        <Field label="Asking Price (₹)" required><Input type="number" value={f.askingPrice} onChange={set("askingPrice")} /></Field>
-      </div>
-      <Field label="Status">
-        <Select value={f.status||"Active"} onChange={set("status")}>
-          {["Active","Sold","Partially Sold","On Hold"].map(s => <option key={s}>{s}</option>)}
-        </Select>
-      </Field>
-      <Field label="Expected Timeline"><Input value={f.expectedTimeline||""} onChange={set("expectedTimeline")} /></Field>
-      <Field label="Notes"><Textarea value={f.notes||""} onChange={set("notes")} /></Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{isEdit ? "Save Changes" : "Create Plot"}</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Add/Edit Expense Modal ────────────────────────────────────
-function ExpenseModal({ plotId, existing, onClose, onDone }) {
-  const isEdit = !!existing;
-  const [f, setF] = useState(existing || { category: EXPENSE_CATEGORIES[0], description:"", amount:"", receiptUrl:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-
-  const submit = async () => {
-    setLoading(true);
-    const res = await API.post(isEdit ? "editExpense" : "addExpense", { ...f, plotId });
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
-
-  return (
-    <Modal title={isEdit ? "Edit Expense" : "Add Expense"} onClose={onClose}>
-      <Field label="Category" required>
-        <Select value={f.category} onChange={set("category")}>
-          {EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-        </Select>
-      </Field>
-      <Field label="Description"><Input value={f.description||""} onChange={set("description")} /></Field>
-      <Field label="Amount (₹)" required><Input type="number" value={f.amount} onChange={set("amount")} /></Field>
-      <Field label="Receipt URL"><Input value={f.receiptUrl||""} onChange={set("receiptUrl")} placeholder="https://drive.google.com/..." /></Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{isEdit ? "Save Changes" : "Add Expense"}</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Add/Edit Commitment Modal ─────────────────────────────────
-function CommitmentModal({ plotId, existing, onClose, onDone }) {
-  const isEdit = !!existing;
-  const [investors, setInvestors] = useState([]);
-  const [f, setF] = useState(existing || { investorId:"", amount:"" });
-  const [loading, setLoading] = useState(false);
-  useEffect(() => { API.get("getInvestors").then(d => setInvestors(Array.isArray(d) ? d : [])); }, []);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-
-  const submit = async () => {
-    setLoading(true);
-    const res = await API.post(isEdit ? "editCommitment" : "addCommitment", { ...f, plotId });
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
-
-  return (
-    <Modal title={isEdit ? "Edit Commitment" : "Add Commitment"} onClose={onClose}>
-      <Field label="Investor" required>
-        <Select value={f.investorId} onChange={set("investorId")} disabled={isEdit}>
-          <option value="">Select investor...</option>
-          {investors.map(i => <option key={i.investorId} value={i.investorId}>{i.name}</option>)}
-        </Select>
-      </Field>
-      <Field label="Amount (₹)" required><Input type="number" value={f.amount} onChange={set("amount")} /></Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{isEdit ? "Save Changes" : "Add Commitment"}</Button>
-      </div>
-    </Modal>
-  );
-}
-
-// ── Add/Edit Sale Modal ───────────────────────────────────────
-function SaleModal({ plot, existing, onClose, onDone }) {
-  const isEdit = !!existing;
-  const [f, setF] = useState(existing || { saleDate: new Date().toISOString().slice(0,10), sizePortionSqft: plot.sizeSqft, salePrice:"", brokerFee:"0", notes:"" });
-  const [loading, setLoading] = useState(false);
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  const netRevenue = (Number(f.salePrice) - Number(f.brokerFee||0)).toFixed(0);
-
-  const submit = async () => {
-    setLoading(true);
-    const res = await API.post(isEdit ? "editSale" : "recordSale", { ...f, plotId: plot.plotId });
-    setLoading(false);
-    if (res.success) { onDone(); onClose(); } else alert(res.error);
-  };
-
-  return (
-    <Modal title={isEdit ? "Edit Sale" : "Record Sale"} onClose={onClose} wide>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-        <Field label="Sale Date" required><Input type="date" value={f.saleDate} onChange={set("saleDate")} /></Field>
-        <Field label="Portion Size (Sq.Ft)" required><Input type="number" value={f.sizePortionSqft} onChange={set("sizePortionSqft")} /></Field>
-        <Field label="Sale Price (₹)" required><Input type="number" value={f.salePrice} onChange={set("salePrice")} /></Field>
-        <Field label="Broker Fee (₹)"><Input type="number" value={f.brokerFee} onChange={set("brokerFee")} /></Field>
-      </div>
-      {f.salePrice && (
-        <div style={{ background:"#0f172a", borderRadius:8, padding:12, marginTop:8, fontSize:"0.85rem" }}>
-          Net Revenue: <strong style={{ color:"#f59e0b" }}>₹{Number(netRevenue).toLocaleString("en-IN")}</strong>
+    <Modal title={isEdit ? 'Edit Plot' : 'New Plot'} onClose={onClose}>
+      <div className="form-stack">
+        <Field label="Plot Name *"><Input value={f.name} onChange={set('name')} /></Field>
+        <Field label="Location *"><Input value={f.location} onChange={set('location')} /></Field>
+        <div className="form-grid">
+          <Field label="Size (sq.ft)"><Input type="number" value={f.sizeSqft} onChange={set('sizeSqft')} /></Field>
+          <Field label="Asking Price (₹)"><Input type="number" value={f.askingPrice} onChange={set('askingPrice')} /></Field>
         </div>
-      )}
-      <Field label="Notes" style={{ marginTop:12 }}><Textarea value={f.notes||""} onChange={set("notes")} /></Field>
-      <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button loading={loading} onClick={submit}>{isEdit ? "Save Changes" : "Record Sale & Distribute"}</Button>
+        <Field label="Status">
+          <Select value={f.status || 'Active'} onChange={set('status')}>
+            {['Active', 'Sold', 'Partially Sold', 'On Hold'].map(s => <option key={s}>{s}</option>)}
+          </Select>
+        </Field>
+        <Field label="Expected Timeline"><Input value={f.expectedTimeline || ''} onChange={set('expectedTimeline')} placeholder="e.g. Q3 2026" /></Field>
+        <Field label="Notes"><Textarea value={f.notes || ''} onChange={set('notes')} /></Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Create Plot'}</Btn>
+        </div>
       </div>
     </Modal>
-  );
+  )
 }
 
-// ── Action Buttons ────────────────────────────────────────────
-function ActionBtns({ onEdit, onDelete }) {
+/* ── Expense Modal ─────────────────────────────────────────── */
+function ExpenseModal({ plotId, existing, onClose, onDone }) {
+  const isEdit = !!existing
+  const [f, setF] = useState(existing || { category: EXPENSE_CATS[0], description: '', amount: '', receiptUrl: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+
+  const submit = async () => {
+    setBusy(true)
+    const res = await API.post(isEdit ? 'editExpense' : 'addExpense', { ...f, plotId })
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
+
   return (
-    <div style={{ display:"flex", gap:6 }} onClick={e => e.stopPropagation()}>
-      <button onClick={onEdit} style={{ background:"#1e3a5f", border:"1px solid #2a4a7f", color:"#60a5fa", borderRadius:4, padding:"3px 10px", cursor:"pointer", fontSize:"0.78rem" }}>Edit</button>
-      <button onClick={onDelete} style={{ background:"#3b1111", border:"1px solid #7f2a2a", color:"#f87171", borderRadius:4, padding:"3px 10px", cursor:"pointer", fontSize:"0.78rem" }}>Delete</button>
-    </div>
-  );
+    <Modal title={isEdit ? 'Edit Expense' : 'Add Expense'} onClose={onClose}>
+      <div className="form-stack">
+        <Field label="Category">
+          <Select value={f.category} onChange={set('category')}>
+            {EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}
+          </Select>
+        </Field>
+        <Field label="Description"><Input value={f.description || ''} onChange={set('description')} /></Field>
+        <Field label="Amount (₹) *"><Input type="number" value={f.amount} onChange={set('amount')} /></Field>
+        <Field label="Receipt URL" hint="Google Drive share link">
+          <Input value={f.receiptUrl || ''} onChange={set('receiptUrl')} placeholder="https://drive.google.com/..." />
+        </Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Add'}</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
+/* ── Commitment Modal ──────────────────────────────────────── */
+function CommitmentModal({ plotId, existing, onClose, onDone }) {
+  const isEdit = !!existing
+  const [investors, setInvestors] = useState([])
+  const [f, setF] = useState(existing || { investorId: '', amount: '' })
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { API.get('getInvestors').then(d => setInvestors(Array.isArray(d) ? d : [])) }, [])
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
 
-// ── Profit Share Breakdown Panel ──────────────────────────────
+  const submit = async () => {
+    setBusy(true)
+    const res = await API.post(isEdit ? 'editCommitment' : 'addCommitment', { ...f, plotId })
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
+
+  return (
+    <Modal title={isEdit ? 'Edit Commitment' : 'Add Commitment'} onClose={onClose}>
+      <div className="form-stack">
+        <Field label="Investor *">
+          <Select value={f.investorId} onChange={set('investorId')} disabled={isEdit}>
+            <option value="">Select investor...</option>
+            {investors.map(i => <option key={i.investorId} value={i.investorId}>{i.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Amount (₹) *"><Input type="number" value={f.amount} onChange={set('amount')} /></Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Add'}</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Sale Modal ────────────────────────────────────────────── */
+function SaleModal({ plot, existing, onClose, onDone }) {
+  const isEdit = !!existing
+  const [f, setF] = useState(existing || { saleDate: new Date().toISOString().slice(0, 10), sizePortionSqft: plot.sizeSqft, salePrice: '', brokerFee: '0', notes: '' })
+  const [busy, setBusy] = useState(false)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+  const net = (Number(f.salePrice) - Number(f.brokerFee || 0))
+
+  const submit = async () => {
+    setBusy(true)
+    const res = await API.post(isEdit ? 'editSale' : 'recordSale', { ...f, plotId: plot.plotId })
+    setBusy(false)
+    if (res.success) { onDone(); onClose() } else alert(res.error)
+  }
+
+  return (
+    <Modal title={isEdit ? 'Edit Sale' : 'Record Sale'} onClose={onClose} wide>
+      <div className="form-stack">
+        <div className="form-grid">
+          <Field label="Sale Date *"><Input type="date" value={f.saleDate} onChange={set('saleDate')} /></Field>
+          <Field label={`Portion Size (sq.ft) — Total: ${plot.sizeSqft}`}>
+            <Input type="number" value={f.sizePortionSqft} onChange={set('sizePortionSqft')} max={plot.sizeSqft} />
+          </Field>
+          <Field label="Sale Price (₹) *"><Input type="number" value={f.salePrice} onChange={set('salePrice')} /></Field>
+          <Field label="Broker Fee (₹)"><Input type="number" value={f.brokerFee} onChange={set('brokerFee')} /></Field>
+        </div>
+        {f.salePrice && (
+          <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', fontSize: '0.85rem' }}>
+            Net Revenue: <strong className="amt-gold">{fc(net)}</strong>
+          </div>
+        )}
+        <Field label="Notes"><Textarea value={f.notes || ''} onChange={set('notes')} /></Field>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Record & Distribute'}</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Profit Share Panel ────────────────────────────────────── */
 function ProfitSharePanel({ plotId }) {
-  const [data, setData] = useState(null);
-  useEffect(() => { API.get("getPlotProfitShare", { plotId }).then(setData); }, [plotId]);
-  if (!data) return <div style={{ padding:"20px 0", color:"#64748b" }}>Loading profit share data...</div>;
-  if (!data.saleBreakdowns || data.saleBreakdowns.length === 0)
-    return <div className="empty">No sales recorded yet — profit share will appear once a sale is recorded.</div>;
+  const [data, setData] = useState(null)
+  useEffect(() => { API.get('getPlotProfitShare', { plotId }).then(setData) }, [plotId])
+  if (!data) return <Loader />
+  if (!data.saleBreakdowns?.length) return <div className="empty-state"><div className="empty-icon">📊</div>No sales yet — profit share will appear once a sale is recorded.</div>
 
   return (
     <div>
-      {data.saleBreakdowns.map((sale, si) => (
-        <div key={sale.saleId} style={{ marginBottom:28 }}>
-          {/* Sale header */}
-          <div style={{ background:"#0f172a", borderRadius:8, padding:"12px 16px", marginBottom:12, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+      {data.saleBreakdowns.map(sale => (
+        <div key={sale.saleId} className="profit-sale-block">
+          <div className="profit-sale-header">
             <div>
-              <div style={{ fontWeight:700, color:"#e2e8f0" }}>Sale on {formatDate(sale.saleDate)}</div>
-              <div style={{ fontSize:"0.8rem", color:"#64748b", marginTop:2 }}>
-                {sale.sizePortionSqft} sq.ft · Sale Price: {formatCurrency(sale.salePrice)} · Broker Fee: {formatCurrency(sale.brokerFee)}
-              </div>
+              <div style={{ fontWeight: 600 }}>Sale — {fd(sale.saleDate)}</div>
+              <div className="profit-sale-meta">{sale.sizePortionSqft} sq.ft · Sale: {fc(sale.salePrice)} · Broker: {fc(sale.brokerFee)}</div>
             </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontSize:"0.75rem", color:"#64748b" }}>Net P&L</div>
-              <div style={{ fontSize:"1.2rem", fontWeight:700, color: sale.netProfitLoss>=0?"#4ade80":"#f87171" }}>
-                {formatCurrency(sale.netProfitLoss)}
-              </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>Net P&L</div>
+              <div className={`profit-pl ${Number(sale.netProfitLoss) >= 0 ? 'amt-green' : 'amt-red'}`}>{fc(sale.netProfitLoss)}</div>
             </div>
           </div>
-
-          {/* Share breakdown table */}
-          <div className="table-wrap">
-            <table className="table">
+          <div className="table-wrap" style={{ borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
+            <table>
               <thead>
                 <tr>
-                  <th>Investor</th>
-                  <th>Committed</th>
-                  <th>Share %</th>
-                  <th>Principal Back</th>
-                  <th>Profit / Loss Share</th>
-                  <th>Total Received</th>
+                  <th>Investor</th><th>Committed</th><th>Share %</th>
+                  <th>Principal Back</th><th>Profit / Loss</th><th>Total Received</th>
                 </tr>
               </thead>
               <tbody>
                 {sale.shares.map((s, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight:600, color: s.investorId==="COMPANY"?"#a78bfa":"#e2e8f0" }}>{s.investorName}</td>
-                    <td>{formatCurrency(s.commitment)}</td>
-                    <td>{formatPercent(s.sharePercent)}</td>
-                    <td style={{ color:"#38bdf8" }}>{formatCurrency(s.principalReturn)}</td>
-                    <td style={{ color: s.profitShare>=0?"#4ade80":"#f87171", fontWeight:600 }}>{formatCurrency(s.profitShare)}</td>
-                    <td style={{ color:"#f59e0b", fontWeight:700 }}>{formatCurrency(s.totalReceived)}</td>
+                    <td style={{ fontWeight: 600, color: s.investorId === 'COMPANY' ? 'var(--purple)' : 'var(--text)' }}>{s.investorName}</td>
+                    <td>{fc(s.commitment)}</td>
+                    <td className="amt-muted">{fp(s.sharePercent)}</td>
+                    <td className="amt-blue">{fc(s.principalReturn)}</td>
+                    <td><PL v={s.profitShare} /></td>
+                    <td className="amt-gold">{fc(s.totalReceived)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -229,197 +207,161 @@ function ProfitSharePanel({ plotId }) {
         </div>
       ))}
     </div>
-  );
+  )
 }
 
-// ── Plot Detail Panel ─────────────────────────────────────────
+/* ── Plot Detail ───────────────────────────────────────────── */
 function PlotDetail({ plotId, onClose, onRefresh }) {
-  const [detail, setDetail] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
-  const { isAdmin } = useAuth();
+  const [detail, setDetail] = useState(null)
+  const [tab, setTab] = useState('overview')
+  const [modal, setModal] = useState(null)
+  const [confirm, setConfirm] = useState(null)
+  const { isAdmin } = useAuth()
 
-  const load = useCallback(() => { API.get("getPlotDetail", { plotId }).then(setDetail); }, [plotId]);
-  useEffect(() => { load(); }, [load]);
-  if (!detail) return <Loader />;
+  const load = useCallback(() => API.get('getPlotDetail', { plotId }).then(setDetail), [plotId])
+  useEffect(() => { load() }, [load])
+  if (!detail) return <Loader />
 
-  const handleDelete = async (action, body, msg) => {
-    setConfirm({
-      message: msg,
-      onConfirm: async () => {
-        setConfirm(null);
-        const res = await API.post(action, body);
-        if (res.success) { load(); onRefresh(); } else alert(res.error);
-      }
-    });
-  };
+  const handleDelete = (action, body, msg) => {
+    setConfirm({ msg, onConfirm: async () => {
+      setConfirm(null)
+      const res = await API.post(action, body)
+      if (res.success) { load(); onRefresh?.() } else alert(res.error)
+    }})
+  }
 
   const expCols = [
-    { key:"category", label:"Category" },
-    { key:"description", label:"Description" },
-    { key:"amount", label:"Amount", render: r => formatCurrency(r.amount) },
-    { key:"createdAt", label:"Date", render: r => formatDate(r.createdAt) },
-    { key:"receiptUrl", label:"Receipt", render: r => r.receiptUrl ? <a href={r.receiptUrl} target="_blank" rel="noreferrer" style={{ color:"var(--gold)" }}>View</a> : "—" },
-    ...(isAdmin ? [{ key:"actions", label:"", render: r => (
-      <ActionBtns
-        onEdit={() => setModal({ type:"expense", data: r })}
-        onDelete={() => handleDelete("deleteExpense", { expenseId: r.expenseId }, `Delete expense "${r.category} - ₹${r.amount}"?`)}
-      />
-    )}] : [])
-  ];
+    { key: 'category', label: 'Category' },
+    { key: 'description', label: 'Description' },
+    { key: 'amount', label: 'Amount', render: r => fc(r.amount) },
+    { key: 'createdAt', label: 'Date', render: r => fd(r.createdAt) },
+    { key: 'receiptUrl', label: 'Receipt', render: r => r.receiptUrl ? <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="amt-gold">View</a> : '—' },
+    ...(isAdmin ? [{ key: 'act', label: '', render: r => <ActionBtns onEdit={() => setModal({ t: 'expense', d: r })} onDelete={() => handleDelete('deleteExpense', { expenseId: r.expenseId }, `Delete "${r.category} — ₹${r.amount}"?`)} /> }] : [])
+  ]
 
   const cmmCols = [
-    { key:"investorName", label:"Investor" },
-    { key:"amount", label:"Committed", render: r => formatCurrency(r.amount) },
-    { key:"sharePercent", label:"Share %", render: r => formatPercent(r.sharePercent) },
-    ...(isAdmin ? [{ key:"actions", label:"", render: r => (
-      <ActionBtns
-        onEdit={() => setModal({ type:"commitment", data: r })}
-        onDelete={() => handleDelete("deleteCommitment", { commitmentId: r.commitmentId, plotId }, `Delete commitment from "${r.investorName}"? This will recalculate all share percentages.`)}
-      />
-    )}] : [])
-  ];
+    { key: 'investorName', label: 'Investor' },
+    { key: 'amount', label: 'Committed', render: r => fc(r.amount) },
+    { key: 'sharePercent', label: 'Share %', render: r => fp(r.sharePercent) },
+    { key: 'isReinvestment', label: 'Source', render: r => isTruthy(r.isReinvestment) ? <Badge text="Reinvested" type="reinvest" /> : <Badge text="Cash" type="cash" /> },
+    ...(isAdmin ? [{ key: 'act', label: '', render: r => <ActionBtns onEdit={() => setModal({ t: 'commitment', d: r })} onDelete={() => handleDelete('deleteCommitment', { commitmentId: r.commitmentId, plotId }, `Remove commitment from ${r.investorName}? This recalculates all shares.`)} /> }] : [])
+  ]
 
   const saleCols = [
-    { key:"saleDate", label:"Date", render: r => formatDate(r.saleDate) },
-    { key:"sizePortionSqft", label:"Size (sq.ft)" },
-    { key:"salePrice", label:"Sale Price", render: r => formatCurrency(r.salePrice) },
-    { key:"netRevenue", label:"Net Revenue", render: r => formatCurrency(r.netRevenue) },
-    { key:"netProfitLoss", label:"P&L", render: r => (
-      <span style={{ color: Number(r.netProfitLoss)>=0 ? "#4ade80" : "#f87171", fontWeight:700 }}>{formatCurrency(r.netProfitLoss)}</span>
-    )},
-    ...(isAdmin ? [{ key:"actions", label:"", render: r => (
-      <ActionBtns
-        onEdit={() => setModal({ type:"sale", data: r })}
-        onDelete={() => handleDelete("deleteSale", { saleId: r.saleId }, `Delete this sale record? ⚠️ This will reverse all wallet distributions for this sale.`)}
-      />
-    )}] : [])
-  ];
+    { key: 'saleDate', label: 'Date', render: r => fd(r.saleDate) },
+    { key: 'sizePortionSqft', label: 'Size (sq.ft)' },
+    { key: 'salePrice', label: 'Sale Price', render: r => fc(r.salePrice) },
+    { key: 'netRevenue', label: 'Net Revenue', render: r => fc(r.netRevenue) },
+    { key: 'netProfitLoss', label: 'P&L', render: r => <PL v={r.netProfitLoss} /> },
+    ...(isAdmin ? [{ key: 'act', label: '', render: r => <ActionBtns onEdit={() => setModal({ t: 'sale', d: r })} onDelete={() => handleDelete('deleteSale', { saleId: r.saleId }, '⚠️ Delete this sale? This reverses all wallet distributions.')} /> }] : [])
+  ]
 
   return (
     <div className="detail-panel">
       <div className="detail-header">
         <div>
-          <h2>{detail.name}</h2>
-          <span style={{ color:"#64748b", fontSize:"0.9rem" }}>{detail.location}</span>
+          <div className="detail-title">{detail.name}</div>
+          <div className="detail-sub">{detail.location} · {detail.sizeSqft} sq.ft · <StatusBadge status={detail.status} /></div>
         </div>
-        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-          {isAdmin && <Button onClick={() => setModal({ type:"plot", data: detail })}>Edit Plot</Button>}
-          {isAdmin && <Button style={{ background:"#3b1111", border:"1px solid #7f2a2a", color:"#f87171" }}
-            onClick={() => handleDelete("deletePlot", { plotId }, `Delete plot "${detail.name}" and ALL related expenses, commitments and sales?`)}>
-            Delete Plot
-          </Button>}
+        <div className="detail-actions">
+          {isAdmin && <Btn variant="ghost" sm onClick={() => setModal({ t: 'plot', d: detail })}>Edit</Btn>}
+          {isAdmin && <Btn variant="danger" sm onClick={() => handleDelete('deletePlot', { plotId }, `Delete "${detail.name}" and all related data?`)}>Delete</Btn>}
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
       </div>
 
-      <div className="stats-grid" style={{ gridTemplateColumns:"repeat(3,1fr)", marginBottom:24 }}>
-        <StatCard label="Total Acquisition Cost" value={formatCurrency(detail.totalCost)} accent="#f59e0b" />
-        <StatCard label="Total Funded" value={formatCurrency(detail.totalFunded)} accent="#4ade80" />
-        <StatCard label="Company Share" value={formatCurrency(detail.companyShare)} accent="#a78bfa" />
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 16 }}>
+        <StatCard label="Acquisition Cost" value={fc(detail.totalCost)} accent="var(--gold)" />
+        <StatCard label="Investor Funded" value={fc(detail.totalFunded)} accent="var(--green)" />
+        <StatCard label="Company Share" value={fc(detail.companyShare)} accent="var(--purple)" />
       </div>
-      <ProgressBar value={detail.totalFunded} max={detail.totalCost} label="Funding Progress" />
+      <ProgressBar value={detail.totalFunded} max={detail.totalCost} label="Funding progress" />
 
-      {/* Tabs */}
-      <div style={{ display:"flex", gap:4, margin:"20px 0 0", borderBottom:"1px solid var(--border)" }}>
-        {[["overview","Overview"],["profitshare","Profit Share"],["sales","Sales"]].map(([key,label]) => (
-          <button key={key} onClick={() => setActiveTab(key)} style={{
-            background:"none", border:"none", cursor:"pointer", padding:"8px 16px",
-            color: activeTab===key ? "var(--gold)" : "#64748b",
-            borderBottom: activeTab===key ? "2px solid var(--gold)" : "2px solid transparent",
-            fontWeight:600, fontSize:"0.85rem", transition:"all 0.15s"
-          }}>{label}</button>
+      <div className="tabs">
+        {[['overview', 'Overview'], ['profitshare', 'Profit Share'], ['sales', 'Sales']].map(([k, l]) => (
+          <button key={k} className={`tab-btn ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
 
-      {activeTab === "overview" && (
-        <div>
+      {tab === 'overview' && (
+        <>
           <div className="section-head">
-            <h3>Expenses Ledger</h3>
-            {isAdmin && <Button onClick={() => setModal({ type:"expense" })}>+ Add Expense</Button>}
+            <span className="section-title">Expenses</span>
+            {isAdmin && <Btn sm onClick={() => setModal({ t: 'expense' })}>+ Add</Btn>}
           </div>
-          <Table cols={expCols} rows={detail.expenses} emptyMsg="No expenses added yet" />
+          <DataTable cols={expCols} rows={detail.expenses} emptyMsg="No expenses yet" emptyIcon="🧾" />
 
           <div className="section-head">
-            <h3>Investor Commitments</h3>
-            {isAdmin && <Button onClick={() => setModal({ type:"commitment" })}>+ Add Commitment</Button>}
+            <span className="section-title">Commitments</span>
+            {isAdmin && <Btn sm onClick={() => setModal({ t: 'commitment' })}>+ Add</Btn>}
           </div>
-          <Table cols={cmmCols} rows={detail.commitments} emptyMsg="No commitments yet" />
-        </div>
+          <DataTable cols={cmmCols} rows={detail.commitments} emptyMsg="No commitments yet" emptyIcon="🤝" />
+        </>
       )}
 
-      {activeTab === "profitshare" && (
-        <div style={{ marginTop:20 }}>
-          <ProfitSharePanel plotId={plotId} />
-        </div>
-      )}
+      {tab === 'profitshare' && <ProfitSharePanel plotId={plotId} />}
 
-      {activeTab === "sales" && (
-        <div>
+      {tab === 'sales' && (
+        <>
           <div className="section-head">
-            <h3>Sales</h3>
-            {isAdmin && <Button variant="accent" onClick={() => setModal({ type:"sale" })}>Record Sale</Button>}
+            <span className="section-title">Sales</span>
+            {isAdmin && <Btn sm variant="accent" onClick={() => setModal({ t: 'sale' })}>Record Sale</Btn>}
           </div>
-          <Table cols={saleCols} rows={detail.sales} emptyMsg="No sales recorded" />
-        </div>
+          <DataTable cols={saleCols} rows={detail.sales} emptyMsg="No sales yet" emptyIcon="🏷️" />
+        </>
       )}
 
-      {/* Modals */}
-      {modal?.type === "plot"       && <PlotModal       existing={modal.data} onClose={() => setModal(null)} onDone={() => { load(); onRefresh(); }} />}
-      {modal?.type === "expense"    && <ExpenseModal    plotId={plotId} existing={modal.data} onClose={() => setModal(null)} onDone={load} />}
-      {modal?.type === "commitment" && <CommitmentModal plotId={plotId} existing={modal.data} onClose={() => setModal(null)} onDone={load} />}
-      {modal?.type === "sale"       && <SaleModal       plot={detail} existing={modal.data} onClose={() => setModal(null)} onDone={() => { load(); onRefresh(); }} />}
-      {confirm && <ConfirmModal message={confirm.message} onConfirm={confirm.onConfirm} onClose={() => setConfirm(null)} />}
+      {modal?.t === 'plot'       && <PlotModal existing={modal.d} onClose={() => setModal(null)} onDone={() => { load(); onRefresh?.() }} />}
+      {modal?.t === 'expense'    && <ExpenseModal plotId={plotId} existing={modal.d} onClose={() => setModal(null)} onDone={load} />}
+      {modal?.t === 'commitment' && <CommitmentModal plotId={plotId} existing={modal.d} onClose={() => setModal(null)} onDone={load} />}
+      {modal?.t === 'sale'       && <SaleModal plot={detail} existing={modal.d} onClose={() => setModal(null)} onDone={() => { load(); onRefresh?.() }} />}
+      {confirm && <Confirm message={confirm.msg} onConfirm={confirm.onConfirm} onClose={() => setConfirm(null)} />}
     </div>
-  );
+  )
 }
 
-// ── Main Plots Page ───────────────────────────────────────────
+/* ── Main Plots Page ───────────────────────────────────────── */
 export default function Plots() {
-  const [plots, setPlots] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const { isAdmin } = useAuth();
+  const [plots, setPlots] = useState([])
+  const [selected, setSelected] = useState(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const { isAdmin } = useAuth()
 
   const load = useCallback(() => {
-    setLoading(true);
-    API.get("getPlots").then(d => { setPlots(Array.isArray(d) ? d : []); setLoading(false); });
-  }, []);
-  useEffect(() => { load(); }, [load]);
+    setLoading(true)
+    API.get('getPlots').then(d => { setPlots(Array.isArray(d) ? d : []); setLoading(false) })
+  }, [])
+  useEffect(() => { load() }, [load])
 
   const cols = [
-    { key:"name", label:"Plot Name" },
-    { key:"location", label:"Location" },
-    { key:"sizeSqft", label:"Size (sq.ft)" },
-    { key:"status", label:"Status", render: r => statusBadge(r.status) },
-    { key:"totalCost", label:"Acquisition Cost", render: r => formatCurrency(r.totalCost) },
-    { key:"totalFunded", label:"Funded", render: r => formatCurrency(r.totalFunded) },
-    { key:"createdAt", label:"Added", render: r => formatDate(r.createdAt) }
-  ];
+    { key: 'name', label: 'Plot Name', render: r => <span style={{ fontWeight: 600 }}>{r.name}</span> },
+    { key: 'location', label: 'Location', render: r => <span className="amt-muted">{r.location}</span> },
+    { key: 'status', label: 'Status', render: r => <StatusBadge status={r.status} /> },
+    { key: 'totalCost', label: 'Cost', render: r => fc(r.totalCost) },
+    { key: 'totalPL', label: 'P&L', render: r => <PL v={r.totalPL} /> },
+    { key: 'createdAt', label: 'Added', render: r => <span className="amt-muted">{fd(r.createdAt)}</span> }
+  ]
+
+  if (loading) return <Loader />
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>Plots</h2>
-          <span className="page-sub">{plots.length} project{plots.length !== 1 ? "s" : ""}</span>
+          <div className="page-title">Plots</div>
+          <div className="page-sub">{plots.length} projects</div>
         </div>
-        {isAdmin && <Button onClick={() => setModal({ type:"plot" })}>+ New Plot</Button>}
+        {isAdmin && <Btn onClick={() => setShowAdd(true)}>+ New Plot</Btn>}
       </div>
 
-      {loading ? <Loader /> : (
-        selected ? (
-          <PlotDetail plotId={selected} onClose={() => setSelected(null)} onRefresh={load} />
-        ) : (
-          <Card>
-            <Table cols={cols} rows={plots} onRowClick={r => setSelected(r.plotId)} emptyMsg="No plots yet." />
-          </Card>
-        )
+      {selected ? (
+        <PlotDetail plotId={selected} onClose={() => setSelected(null)} onRefresh={load} />
+      ) : (
+        <DataTable cols={cols} rows={plots} onRowClick={r => setSelected(r.plotId)} emptyMsg="No plots yet" emptyIcon="🏘️" />
       )}
 
-      {modal?.type === "plot" && <PlotModal onClose={() => setModal(null)} onDone={load} />}
+      {showAdd && <PlotModal onClose={() => setShowAdd(false)} onDone={() => { load(); setShowAdd(false) }} />}
     </div>
-  );
+  )
 }
