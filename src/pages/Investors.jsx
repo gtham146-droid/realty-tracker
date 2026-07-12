@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { API, fc, fd, fp, isTruthy } from '../config'
-import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Textarea, Confirm, ActionBtns, MoneyTrail, TxTypeBadge } from '../components/UI'
+import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Textarea, Confirm, ActionBtns, MoneyTrail, TxTypeBadge, BackRow } from '../components/UI.jsx'
 import { useAuth } from '../context/AuthContext'
 
 /* ── Investor Modal ────────────────────────────────────────── */
@@ -197,6 +197,7 @@ function InvestorDetail({ investorId, onClose, onRefresh }) {
 
   return (
     <div className="detail-panel">
+      <BackRow listLabel="All Investors" itemLabel={detail.name} onBack={onClose} />
       <div className="detail-header">
         <div>
           <div className="detail-title">{detail.name}</div>
@@ -208,7 +209,6 @@ function InvestorDetail({ investorId, onClose, onRefresh }) {
             msg: `Delete "${detail.name}"? Removes wallet, commitments, and all transaction history.`,
             onConfirm: async () => { setConfirm(null); const res = await API.post('deleteInvestor', { investorId }); if (res.success) { onClose(); onRefresh?.() } else alert(res.error) }
           })}>Delete</Btn>}
-          <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
       </div>
 

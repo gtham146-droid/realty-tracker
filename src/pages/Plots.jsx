@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { API, fc, fd, fp, EXPENSE_CATS, isTruthy } from '../config'
-import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Select, Textarea, ActionBtns, Confirm, ProgressBar } from '../components/UI'
+import { Loader, StatCard, DataTable, StatusBadge, Badge, Modal, Btn, Field, Input, Select, Textarea, ActionBtns, Confirm, ProgressBar, BackRow } from '../components/UI.jsx'
 import { useAuth } from '../context/AuthContext'
 
 /* ── Small helpers ─────────────────────────────────────────── */
@@ -258,6 +258,7 @@ function PlotDetail({ plotId, onClose, onRefresh }) {
 
   return (
     <div className="detail-panel">
+      <BackRow listLabel="All Plots" itemLabel={detail.name} onBack={onClose} />
       <div className="detail-header">
         <div>
           <div className="detail-title">{detail.name}</div>
@@ -266,7 +267,6 @@ function PlotDetail({ plotId, onClose, onRefresh }) {
         <div className="detail-actions">
           {isAdmin && <Btn variant="ghost" sm onClick={() => setModal({ t: 'plot', d: detail })}>Edit</Btn>}
           {isAdmin && <Btn variant="danger" sm onClick={() => handleDelete('deletePlot', { plotId }, `Delete "${detail.name}" and all related data?`)}>Delete</Btn>}
-          <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
       </div>
 
