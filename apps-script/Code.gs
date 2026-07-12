@@ -6,7 +6,8 @@
 const S = {
   PLOTS:'Plots', EXPENSES:'Expenses', INVESTORS:'Investors',
   COMMITMENTS:'Commitments', SALES:'Sales', WALLET:'Wallet',
-  TRANSACTIONS:'Transactions', USERS:'Users', CONFIG:'Config'
+  TRANSACTIONS:'Transactions', USERS:'Users', CONFIG:'Config',
+  PRINCIPAL_RETURNS:'PrincipalReturns'
 }
 
 function ok(data) {
@@ -55,6 +56,8 @@ function doGet(e) {
       case 'updatePlotStatus':  return ok(editRow(S.PLOTS,'plotId',{plotId:body.plotId,status:body.status}))
       case 'saveReportConfig':  return ok(saveReportConfig(body))
       case 'sendReportsNow':    return ok(sendAllReports())
+      case 'savePrincipalReturns': return ok(savePrincipalReturns(body))
+      case 'getPrincipalReturns':  return ok(getPrincipalReturns(p.saleId))
       default:                  return ok({error:'Unknown action: '+action})
     }
   } catch(err) {
@@ -84,7 +87,8 @@ function setupSheets() {
     [S.SALES]:        ['saleId','plotId','saleDate','sizePortionSqft','salePrice','brokerFee','netRevenue','netProfitLoss','notes','createdAt'],
     [S.WALLET]:       ['walletId','investorId','balance','lastUpdated'],
     [S.TRANSACTIONS]: ['txId','investorId','plotId','saleId','type','amount','description','createdAt'],
-    [S.CONFIG]:       ['key','value']
+    [S.CONFIG]:       ['key','value'],
+    [S.PRINCIPAL_RETURNS]: ['returnId','saleId','plotId','investorId','amount','createdAt']
   }
   Object.entries(schema).forEach(([name,headers]) => {
     let sh = ss.getSheetByName(name)
@@ -287,10 +291,15 @@ function getInvestorReturns(investorId) {
       const cp=tc*(sold/plotSize)
       return s+(num(sale.netProfitLoss)*sd)
     },0)
+    const principalReturned = getRows(getSheet(S.PRINCIPAL_RETURNS))
+      .filter(r => r.investorId === investorId && r.plotId === c.plotId)
+      .reduce((s, r) => s + num(r.amount), 0)
+    const netLocked = Math.max(0, num(c.amount) - principalReturned)
     return {
       plotId:c.plotId,plotName:plot?plot.name:'Unknown',plotStatus:plot?plot.status:'—',
       commitment:num(c.amount),sharePercent:num(c.sharePercent),isReinvestment:c.isReinvestment,
-      totalReceived,profitLossShare,salesCount:pSales.length
+      totalReceived,profitLossShare,salesCount:pSales.length,
+      principalReturned, netLocked
     }
   })
 
@@ -314,10 +323,16 @@ function getInvestorReturns(investorId) {
   // Only actual profit/loss (not principal returns)
   const profitOnly=totalPLShare
 
-  // Active funds = all commitments still in active/partially-sold/on-hold plots
-  const activeFunds=plotBreakdowns
-    .filter(p=>['Active','Partially Sold','On Hold'].includes(p.plotStatus))
-    .reduce((s,p)=>s+p.commitment,0)
+  // Active funds = commitments in active plots MINUS any principal already returned
+  const principalReturns = getRows(getSheet(S.PRINCIPAL_RETURNS)).filter(r => r.investorId === investorId)
+  const activeFunds = plotBreakdowns
+    .filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
+    .reduce((s, p) => {
+      const returned = principalReturns
+        .filter(r => r.plotId === p.plotId)
+        .reduce((sr, r) => sr + num(r.amount), 0)
+      return s + Math.max(0, p.commitment - returned)
+    }, 0)
 
   // Money Trail summary (informational — shows where every rupee is)
   // IN:  cashInvested + profitOnly + adjustments
@@ -505,6 +520,40 @@ function getDashboard() {
     totalPL:sales.reduce((s,x)=>s+num(x.netProfitLoss||0),0),
     totalInvestors:investors.length, plotSummaries, recentTransactions:recentTxns
   }
+}
+
+// ── PRINCIPAL RETURNS ──────────────────────────────────────────
+// Tracks how much of each investor's principal was returned from a partial sale
+function savePrincipalReturns(b) {
+  // b.saleId, b.plotId, b.returns = [{investorId, amount}]
+  const sh = getSheet(S.PRINCIPAL_RETURNS)
+  // Delete existing entries for this sale first (allow re-saving)
+  const data = sh.getDataRange().getValues()
+  const saleCol = data[0].indexOf('saleId')
+  for(let i = data.length-1; i >= 1; i--) {
+    if(data[i][saleCol] === b.saleId) sh.deleteRow(i+1)
+  }
+  // Save new entries
+  const entries = b.returns || []
+  entries.forEach(r => {
+    if(num(r.amount) > 0) {
+      sh.appendRow(['PR-'+Date.now()+'-'+r.investorId, b.saleId, b.plotId, r.investorId, r.amount, new Date().toISOString()])
+    }
+  })
+  return {success:true, saved: entries.length}
+}
+
+function getPrincipalReturns(saleId) {
+  const rows = getRows(getSheet(S.PRINCIPAL_RETURNS))
+  return saleId ? rows.filter(r => r.saleId === saleId) : rows
+}
+
+// Get total principal returned per investor per plot
+function getPrincipalReturnedByPlot(investorId, plotId) {
+  const rows = getRows(getSheet(S.PRINCIPAL_RETURNS))
+  return rows
+    .filter(r => r.investorId === investorId && r.plotId === plotId)
+    .reduce((s, r) => s + num(r.amount), 0)
 }
 
 // ── REPORT CONFIG ──────────────────────────────────────────────

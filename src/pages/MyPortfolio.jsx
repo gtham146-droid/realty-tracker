@@ -52,6 +52,17 @@ export default function MyPortfolio() {
     { key: 'plotName', label: 'Plot', render: r => <span style={{ fontWeight: 600 }}>{r.plotName}</span> },
     { key: 'plotStatus', label: 'Status', render: r => <StatusBadge status={r.plotStatus} /> },
     { key: 'commitment', label: 'My Commitment', render: r => fc(r.commitment) },
+    { key: 'netLocked', label: 'Still Locked', render: r => {
+      if (!['Active','Partially Sold','On Hold'].includes(r.plotStatus)) return <span className="amt-muted">—</span>
+      const locked = r.netLocked !== undefined ? r.netLocked : r.commitment
+      const returned = r.principalReturned || 0
+      return (
+        <span>
+          <span className="amt-gold">{fc(locked)}</span>
+          {returned > 0 && <span style={{ color:'var(--green)', fontSize:'0.75rem', marginLeft:4 }}>({fc(returned)} returned)</span>}
+        </span>
+      )
+    }},
     { key: 'isReinvestment', label: 'Source', render: r => isTruthy(r.isReinvestment) ? <Badge text="Reinvested" type="reinvest" /> : <Badge text="Cash" type="cash" /> },
     { key: 'sharePercent', label: 'Share %', render: r => fp(r.sharePercent) },
     { key: 'profitLossShare', label: 'My P&L', render: r => <span className={r.profitLossShare >= 0 ? 'amt-green' : 'amt-red'}>{fc(r.profitLossShare)}</span> },

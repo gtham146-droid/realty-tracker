@@ -125,14 +125,50 @@ function SaleModal({ plot, existing, onClose, onDone }) {
   const isEdit = !!existing
   const [f, setF] = useState(existing || { saleDate: new Date().toISOString().slice(0, 10), sizePortionSqft: plot.sizeSqft, salePrice: '', brokerFee: '0', notes: '' })
   const [busy, setBusy] = useState(false)
+  const [showPrincipal, setShowPrincipal] = useState(false)
+  const [principalReturns, setPrincipalReturns] = useState({}) // investorId -> amount
+  const [commitments, setCommitments] = useState([])
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
   const net = (Number(f.salePrice) - Number(f.brokerFee || 0))
+
+  // Load commitments when principal section is opened
+  const loadCommitments = async () => {
+    if (commitments.length) return
+    const detail = await API.get('getPlotDetail', { plotId: plot.plotId })
+    setCommitments(detail.commitments || [])
+    // If editing, load existing principal returns
+    if (existing?.saleId) {
+      const pr = await API.get('getPrincipalReturns', { saleId: existing.saleId })
+      const map = {}
+      if (Array.isArray(pr)) pr.forEach(r => { map[r.investorId] = r.amount })
+      setPrincipalReturns(map)
+    }
+  }
+
+  const togglePrincipal = () => {
+    if (!showPrincipal) loadCommitments()
+    setShowPrincipal(p => !p)
+  }
+
+  const totalPrincipalEntered = Object.values(principalReturns).reduce((s, v) => s + (Number(v) || 0), 0)
 
   const submit = async () => {
     setBusy(true)
     const res = await API.post(isEdit ? 'editSale' : 'recordSale', { ...f, plotId: plot.plotId })
+    if (res.success || res.saleId) {
+      const saleId = res.saleId || existing?.saleId
+      // Save principal returns if any were entered
+      const returns = Object.entries(principalReturns)
+        .filter(([, v]) => Number(v) > 0)
+        .map(([investorId, amount]) => ({ investorId, amount: Number(amount) }))
+      if (returns.length > 0) {
+        await API.post('savePrincipalReturns', { saleId, plotId: plot.plotId, returns })
+      }
+      onDone(); onClose()
+    } else {
+      alert(res.error)
+    }
     setBusy(false)
-    if (res.success) { onDone(); onClose() } else alert(res.error)
   }
 
   return (
@@ -146,12 +182,63 @@ function SaleModal({ plot, existing, onClose, onDone }) {
           <Field label="Sale Price (₹) *"><Input type="number" value={f.salePrice} onChange={set('salePrice')} /></Field>
           <Field label="Broker Fee (₹)"><Input type="number" value={f.brokerFee} onChange={set('brokerFee')} /></Field>
         </div>
+
         {f.salePrice && (
           <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '10px 14px', fontSize: '0.85rem' }}>
             Net Revenue: <strong className="amt-gold">{fc(net)}</strong>
           </div>
         )}
+
         <Field label="Notes"><Textarea value={f.notes || ''} onChange={set('notes')} /></Field>
+
+        {/* Principal Return Section */}
+        <div style={{ border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={togglePrincipal}
+            style={{ width: '100%', background: 'var(--surface2)', border: 'none', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: 'var(--text)', fontSize: '0.83rem', fontWeight: 600 }}
+          >
+            <span>💰 Principal returned to investors? <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(optional — for partial sales)</span></span>
+            <span style={{ color: 'var(--text-3)' }}>{showPrincipal ? '▲' : '▼'}</span>
+          </button>
+
+          {showPrincipal && (
+            <div style={{ padding: 14 }}>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', marginBottom: 12 }}>
+                Enter how much of each investor's original investment was returned from this sale. This removes that amount from their "locked in plots" figure.
+              </p>
+              {commitments.length === 0 ? (
+                <div style={{ color: 'var(--text-3)', fontSize: '0.82rem' }}>Loading investors...</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {commitments.map(c => (
+                    <div key={c.investorId} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, fontSize: '0.83rem' }}>
+                        <span style={{ fontWeight: 600 }}>{c.investorName}</span>
+                        <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>committed {fc(c.amount)}</span>
+                      </div>
+                      <div style={{ width: 160 }}>
+                        <Input
+                          type="number"
+                          placeholder="₹ returned"
+                          value={principalReturns[c.investorId] || ''}
+                          max={c.amount}
+                          onChange={e => setPrincipalReturns(p => ({ ...p, [c.investorId]: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {totalPrincipalEntered > 0 && (
+                    <div style={{ background: 'var(--surface2)', borderRadius: 6, padding: '8px 12px', fontSize: '0.82rem', marginTop: 4 }}>
+                      Total principal being returned: <strong className="amt-gold">{fc(totalPrincipalEntered)}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn loading={busy} onClick={submit}>{isEdit ? 'Save' : 'Record & Distribute'}</Btn>
