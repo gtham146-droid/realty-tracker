@@ -131,22 +131,18 @@ function ReturnsTab({ investorId }) {
   useEffect(() => { API.get('getInvestorReturns', { investorId }).then(setData) }, [investorId])
   if (!data) return <Loader />
 
-  // Build money trail data
+  // Money Trail — transaction-based (always balanced regardless of plot status)
   const trail = {
     cashInvested:     data.cashInvested,
-    profitEarned:     data.totalPLShare,
+    profitEarned:     data.profitCredits,
     adjustments:      data.adjustments,
-    totalIn:          data.cashInvested + Math.max(0, data.totalPLShare) + data.adjustments,
-    activelyInvested: data.plotBreakdowns.filter(p => p.plotStatus === 'Active' && !isTruthy(p.isReinvestment)).reduce((s, p) => s + p.commitment, 0),
+    totalIn:          data.trailTotalIn,
+    activelyInvested: Math.max(0, data.activeFunds),
     reinvestedAmount: data.reinvested,
     withdrawn:        data.withdrawals,
     walletBalance:    data.walletBalance,
-    totalOut:         0
+    totalOut:         data.trailTotalOut
   }
-  // Active + reinvested_active + withdrawn + wallet = total out
-  const activeReinvest = data.plotBreakdowns.filter(p => p.plotStatus === 'Active' && isTruthy(p.isReinvestment)).reduce((s, p) => s + p.commitment, 0)
-  trail.activelyInvested += activeReinvest
-  trail.totalOut = trail.activelyInvested + trail.withdrawn + trail.walletBalance
 
   const plotCols = [
     { key: 'plotName', label: 'Plot', render: r => <span style={{ fontWeight: 600 }}>{r.plotName}</span> },

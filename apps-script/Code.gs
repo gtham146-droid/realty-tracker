@@ -294,15 +294,42 @@ function getInvestorReturns(investorId) {
     }
   })
 
+  // Commitment-based (for per-plot breakdown display only)
   const cashInvested=cmm.filter(c=>!isTruthy(c.isReinvestment)).reduce((s,c)=>s+num(c.amount),0)
   const reinvested=cmm.filter(c=>isTruthy(c.isReinvestment)).reduce((s,c)=>s+num(c.amount),0)
   const totalPLShare=plotBreakdowns.reduce((s,p)=>s+p.profitLossShare,0)
   const totalReturns=plotBreakdowns.reduce((s,p)=>s+p.totalReceived,0)
-  const withdrawals=txns.filter(t=>t.type==='WITHDRAWAL').reduce((s,t)=>s+Math.abs(num(t.amount)),0)
-  const adjustments=txns.filter(t=>t.type==='ADJUSTMENT').reduce((s,t)=>s+num(t.amount),0)
   const walletBalance=wallet?num(wallet.balance):0
 
-  return {investorId,plotBreakdowns,cashInvested,reinvested,totalCommitted:cashInvested+reinvested,totalPLShare,totalReturns,withdrawals,adjustments,walletBalance}
+  // Transaction-based totals — used for Money Trail reconciliation
+  // This is always accurate regardless of plot status (active/partial/sold)
+  const txCredits=txns.filter(t=>num(t.amount)>0).reduce((s,t)=>s+num(t.amount),0)
+  const txDebits =txns.filter(t=>num(t.amount)<0).reduce((s,t)=>s+Math.abs(num(t.amount)),0)
+  const adjustments=txns.filter(t=>t.type==='ADJUSTMENT').reduce((s,t)=>s+num(t.amount),0)
+  const profitCredits=txns.filter(t=>t.type==='PROFIT_DISTRIBUTION'||t.type==='LOSS_DISTRIBUTION').reduce((s,t)=>s+num(t.amount),0)
+  // withdrawals = money that actually LEFT (including reinvestments out of wallet)
+  const withdrawals=txns.filter(t=>t.type==='WITHDRAWAL').reduce((s,t)=>s+Math.abs(num(t.amount)),0)
+
+  // For Money Trail:
+  // totalIn  = all credits (profits + positive adjustments) = txCredits
+  // totalOut = all debits (withdrawals/reinvestments) + current wallet
+  // These must balance: totalIn === totalOut (wallet is what's left)
+  const trailTotalIn  = txCredits
+  const trailTotalOut = txDebits + walletBalance
+
+  // Currently active funds = totalIn - withdrawn - wallet
+  // = money from wallet currently locked in plots
+  const activeFunds = txCredits - txDebits - walletBalance
+
+  return {
+    investorId, plotBreakdowns,
+    // Commitment-based (for display in per-plot table)
+    cashInvested, reinvested, totalCommitted: cashInvested+reinvested,
+    totalPLShare, totalReturns,
+    // Transaction-based (for Money Trail — always balanced)
+    trailTotalIn, trailTotalOut, activeFunds,
+    withdrawals, adjustments, profitCredits, walletBalance
+  }
 }
 
 function addInvestor(b) {

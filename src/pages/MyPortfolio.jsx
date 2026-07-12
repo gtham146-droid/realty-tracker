@@ -28,18 +28,18 @@ export default function MyPortfolio() {
 
   const walletBal = detail.wallet?.balance || 0
 
+  // Money Trail — transaction-based (always balanced regardless of plot status)
   const trail = {
     cashInvested:     returns.cashInvested,
-    profitEarned:     returns.totalPLShare,
+    profitEarned:     returns.profitCredits,
     adjustments:      returns.adjustments,
-    totalIn:          returns.cashInvested + Math.max(0, returns.totalPLShare) + returns.adjustments,
-    activelyInvested: returns.plotBreakdowns.reduce((s, p) => p.plotStatus === 'Active' ? s + p.commitment : s, 0),
+    totalIn:          returns.trailTotalIn,
+    activelyInvested: Math.max(0, returns.activeFunds),
     reinvestedAmount: returns.reinvested,
     withdrawn:        returns.withdrawals,
     walletBalance:    walletBal,
-    totalOut:         0
+    totalOut:         returns.trailTotalOut
   }
-  trail.totalOut = trail.activelyInvested + trail.withdrawn + trail.walletBalance
 
   const txCols = [
     { key: 'createdAt', label: 'Date', render: r => <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{fd(r.createdAt)}</span> },
