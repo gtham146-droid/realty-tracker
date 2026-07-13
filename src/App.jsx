@@ -9,33 +9,32 @@ import MyPortfolio from './pages/MyPortfolio.jsx'
 import Reports from './pages/Reports.jsx'
 
 const ADMIN_NAV = [
-  { path: '/dashboard', label: 'Dashboard', icon: '◈' },
-  { path: '/plots',     label: 'Plots',     icon: '⬡' },
-  { path: '/investors', label: 'Investors', icon: '◎' },
-  { path: '/reports',   label: 'Reports',   icon: '📊' },
+  { path:'/dashboard', label:'Dashboard', icon:'◈' },
+  { path:'/plots',     label:'Plots',     icon:'⬡' },
+  { path:'/investors', label:'Investors', icon:'◎' },
+  { path:'/reports',   label:'Reports',   icon:'✉' },
 ]
 const INVESTOR_NAV = [
-  { path: '/portfolio', label: 'Portfolio', icon: '◈' },
+  { path:'/portfolio', label:'Portfolio', icon:'◈' },
 ]
 
 function Layout() {
   const { user, logout, isAdmin } = useAuth()
-  const nav = isAdmin ? ADMIN_NAV : INVESTOR_NAV
-  const navigate = useNavigate()
-  const location = useLocation()
+  const nav      = isAdmin ? ADMIN_NAV : INVESTOR_NAV
+  const navigate  = useNavigate()
+  const location  = useLocation()
 
-  // Load Google SDK for potential re-use
   useEffect(() => {
     if (!document.getElementById('gsi-script')) {
       const s = document.createElement('script')
-      s.id = 'gsi-script'
-      s.src = 'https://accounts.google.com/gsi/client'
+      s.id = 'gsi-script'; s.src = 'https://accounts.google.com/gsi/client'
       s.async = true; s.defer = true
       document.head.appendChild(s)
     }
   }, [])
 
   const initials = (user?.displayName || user?.username || '?')[0].toUpperCase()
+  const isActive = (path) => location.pathname === path
 
   return (
     <div className="app-shell">
@@ -55,7 +54,7 @@ function Layout() {
           {nav.map(n => (
             <button
               key={n.path}
-              className={`nav-link ${location.pathname === n.path ? 'active' : ''}`}
+              className={`nav-link${isActive(n.path) ? ' active' : ''}`}
               onClick={() => navigate(n.path)}
             >
               <span className="nav-icon">{n.icon}</span>
@@ -67,7 +66,9 @@ function Layout() {
         <div className="sidebar-footer">
           <div className="user-row">
             <div className="avatar">
-              {user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : initials}
+              {user?.picture
+                ? <img src={user.picture} alt="" referrerPolicy="no-referrer" />
+                : initials}
             </div>
             <div className="user-info">
               <div className="user-name">{user?.displayName || user?.username}</div>
@@ -83,7 +84,7 @@ function Layout() {
         {/* Mobile Header */}
         <header className="mobile-header">
           <div className="mobile-brand">
-            <div style={{ width:28, height:28, background:'linear-gradient(135deg,#f0a500,#e06c00)', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.85rem' }}>🏠</div>
+            <div className="mobile-brand-icon">🏠</div>
             RealtyTrack
           </div>
           <div
@@ -92,7 +93,9 @@ function Layout() {
             onClick={logout}
             title="Tap to sign out"
           >
-            {user?.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : initials}
+            {user?.picture
+              ? <img src={user.picture} alt="" referrerPolicy="no-referrer" />
+              : initials}
           </div>
         </header>
 
@@ -120,19 +123,19 @@ function Layout() {
             {nav.map(n => (
               <button
                 key={n.path}
-                className={`bnav-item ${location.pathname === n.path ? 'active' : ''}`}
+                className={`bnav-item${isActive(n.path) ? ' active' : ''}`}
                 onClick={() => navigate(n.path)}
               >
-                <span className="bnav-icon-wrap">
+                <div className="bnav-pill">
                   <span className="bnav-icon">{n.icon}</span>
-                </span>
+                </div>
                 <span className="bnav-label">{n.label}</span>
               </button>
             ))}
             <button className="bnav-item" onClick={logout}>
-              <span className="bnav-icon-wrap">
+              <div className="bnav-pill">
                 <span className="bnav-icon">⏏</span>
-              </span>
+              </div>
               <span className="bnav-label">Sign Out</span>
             </button>
           </div>

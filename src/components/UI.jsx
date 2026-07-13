@@ -43,7 +43,8 @@ export function BackRow({ listLabel, itemLabel, onBack }) {
   return (
     <div className="back-row">
       <button className="back-crumb" onClick={onBack}>
-        ← {listLabel}
+        <span style={{ fontSize:'0.8rem', opacity:0.7 }}>←</span>
+        {listLabel}
       </button>
       {itemLabel && (
         <>
@@ -162,8 +163,7 @@ export function MoneyTrail({ data }) {
         </span>
       </div>
 
-      {/* WHERE MONEY CAME FROM */}
-      <div style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-3)', marginBottom:6 }}>Where it came from</div>
+      <div className="recon-section-label">Where it came from</div>
       <div className="recon-row">
         <span className="recon-label">💵 Own cash invested</span>
         <span className="recon-value amt-blue">{fc(data.cashInvested)}</span>
@@ -180,9 +180,7 @@ export function MoneyTrail({ data }) {
       )}
 
       <hr className="recon-divider" />
-
-      {/* WHERE MONEY IS NOW */}
-      <div style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', color:'var(--text-3)', marginBottom:6 }}>Where it is now</div>
+      <div className="recon-section-label">Where it is now</div>
       <div className="recon-row">
         <span className="recon-label">📍 Locked in active plots</span>
         <span className="recon-value amt-gold">{fc(data.activelyInvested)}</span>
