@@ -586,113 +586,198 @@ function scheduledReport() {
 }
 
 function sendAllReports() {
-  const investors=getRows(getSheet(S.INVESTORS))
-  const cfg=getReportConfig().config
-  const plots=getRows(getSheet(S.PLOTS))
-  let sent=0
-  investors.forEach(inv=>{
-    if(!inv.email||!inv.email.includes('@')) return
+  const investors = getRows(getSheet(S.INVESTORS))
+  const cfg       = getReportConfig().config
+  const appUrl    = getConfigVal('appUrl') || 'https://gtham146-droid.github.io/realty-tracker/'
+  const senderName= cfg.senderName || 'RealtyTrack'
+  let sent = 0, failed = 0, errors = []
+
+  const now       = new Date()
+  const monthName = now.toLocaleString('en-IN', {month:'long'})
+  const year      = now.getFullYear()
+  const reportDate= now.toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})
+
+  investors.forEach(inv => {
+    if (!inv.email || !inv.email.includes('@')) return
     try {
-      const detail=getInvestorDetail(inv.investorId)
-      const returns=getInvestorReturns(inv.investorId)
-      const wallet=getRows(getSheet(S.WALLET)).find(w=>w.investorId===inv.investorId)
-      const walletBal=wallet?num(wallet.balance):0
-      const now=new Date()
-      const monthName=now.toLocaleString('en-IN',{month:'long'})
-      const year=now.getFullYear()
-      const subject=(cfg.subject||'Your Investment Statement — {month} {year}').replace('{month}',monthName).replace('{year}',year).replace('{name}',inv.name)
+      const returns   = getInvestorReturns(inv.investorId)
+      const detail    = getInvestorDetail(inv.investorId)
+      const walletBal = returns.walletBalance
+      const roi       = returns.cashInvested > 0
+        ? ((returns.profitCredits / returns.cashInvested) * 100).toFixed(1) + '%'
+        : '—'
 
-      const activeInvestments=returns.plotBreakdowns.filter(p=>p.plotStatus==='Active')
-      const completedInvestments=returns.plotBreakdowns.filter(p=>p.plotStatus!=='Active')
+      const activeInvestments    = returns.plotBreakdowns.filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
+      const completedInvestments = returns.plotBreakdowns.filter(p => p.plotStatus === 'Sold')
+      const recentTxns           = (detail.transactions || []).slice(-5).reverse()
 
-      let html=`
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc;padding:20px;">
-  <div style="background:linear-gradient(135deg,#0d1628,#172238);border-radius:12px;padding:28px 24px;margin-bottom:20px;text-align:center;">
-    <div style="font-size:28px;margin-bottom:8px;">🏠</div>
-    <div style="color:#f0a500;font-size:1.3rem;font-weight:700;margin-bottom:4px;">RealtyTrack</div>
-    <div style="color:#94a3b8;font-size:0.85rem;">Investment Statement — ${monthName} ${year}</div>
-  </div>
-  <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #e2e8f0;">
-    <div style="font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">👋 Hello, ${inv.name}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div style="background:#f0fdf4;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:700;color:#16a34a;">₹${fmtNum(walletBal)}</div>
-        <div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Wallet Balance</div>
-      </div>
-      <div style="background:#eff6ff;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:700;color:#2563eb;">₹${fmtNum(returns.cashInvested)}</div>
-        <div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Cash Invested</div>
-      </div>
-      <div style="background:#f5f3ff;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:700;color:#7c3aed;">₹${fmtNum(returns.totalPLShare)}</div>
-        <div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Total Profit Earned</div>
-      </div>
-      <div style="background:#fff7ed;border-radius:8px;padding:12px;text-align:center;">
-        <div style="font-size:1.2rem;font-weight:700;color:#d97706;">${returns.cashInvested>0?((returns.totalPLShare/returns.cashInvested)*100).toFixed(1)+'%':'—'}</div>
-        <div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Net ROI</div>
-      </div>
+      const subject = (cfg.subject || 'Your Investment Statement — {month} {year}')
+        .replace('{month}', monthName).replace('{year}', year).replace('{name}', inv.name)
+
+      // ── Email HTML ──────────────────────────────────────────
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+  <!-- HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#0c1428 0%,#1a2d50 100%);border-radius:16px 16px 0 0;padding:36px 32px;text-align:center;">
+    <div style="display:inline-block;background:linear-gradient(135deg,#f0a500,#e06c00);border-radius:14px;width:52px;height:52px;line-height:52px;font-size:26px;margin-bottom:14px;">🏠</div>
+    <div style="color:#f0a500;font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:4px;">${senderName}</div>
+    <div style="color:#94a3b8;font-size:13px;">Investment Statement · ${monthName} ${year}</div>
+    <div style="margin-top:16px;color:#e2e8f0;font-size:16px;font-weight:500;">Hi ${inv.name} 👋</div>
+    <div style="color:#94a3b8;font-size:13px;margin-top:4px;">Here's your portfolio summary as of ${reportDate}</div>
+  </td></tr>
+
+  <!-- SUMMARY CARDS -->
+  <tr><td style="background:#ffffff;padding:24px 28px 8px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:16px;">Portfolio Summary</div>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="25%" style="padding:0 6px 12px 0;">
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;text-align:center;">
+            <div style="font-size:18px;font-weight:700;color:#16a34a;">₹${fmtNum(walletBal)}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:3px;">Wallet Balance</div>
+          </div>
+        </td>
+        <td width="25%" style="padding:0 6px 12px 6px;">
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center;">
+            <div style="font-size:18px;font-weight:700;color:#2563eb;">₹${fmtNum(returns.cashInvested)}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:3px;">Cash Invested</div>
+          </div>
+        </td>
+        <td width="25%" style="padding:0 6px 12px 6px;">
+          <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:14px;text-align:center;">
+            <div style="font-size:18px;font-weight:700;color:#7c3aed;">₹${fmtNum(returns.profitCredits)}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:3px;">Profit Earned</div>
+          </div>
+        </td>
+        <td width="25%" style="padding:0 0 12px 6px;">
+          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px;text-align:center;">
+            <div style="font-size:18px;font-weight:700;color:#d97706;">${roi}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:3px;">Net ROI</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  ${activeInvestments.length > 0 && cfg.includeWallet !== 'false' ? `
+  <!-- ACTIVE INVESTMENTS -->
+  <tr><td style="background:#ffffff;padding:8px 28px 20px;">
+    <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">📍 Active Investments</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        <tr style="background:#f8fafc;">
+          <th style="padding:8px 10px;text-align:left;color:#64748b;font-weight:600;border-radius:6px 0 0 6px;">Plot</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Committed</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Still Locked</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;border-radius:0 6px 6px 0;">Share %</th>
+        </tr>
+        ${activeInvestments.map(p => {
+          const locked = p.netLocked !== undefined ? p.netLocked : p.commitment
+          const returned = p.principalReturned || 0
+          return `<tr style="border-top:1px solid #f1f5f9;">
+            <td style="padding:10px 10px;">${p.plotName}<br><span style="font-size:11px;color:#94a3b8;">${p.plotStatus}</span></td>
+            <td style="padding:10px 10px;text-align:right;font-weight:600;">₹${fmtNum(p.commitment)}</td>
+            <td style="padding:10px 10px;text-align:right;font-weight:600;color:#d97706;">₹${fmtNum(locked)}${returned > 0 ? '<br><span style="font-size:10px;color:#16a34a;">₹'+fmtNum(returned)+' returned</span>' : ''}</td>
+            <td style="padding:10px 10px;text-align:right;color:#64748b;">${num(p.sharePercent).toFixed(2)}%</td>
+          </tr>`
+        }).join('')}
+      </table>
     </div>
-  </div>`
+  </td></tr>` : ''}
 
-      if(activeInvestments.length && cfg.includeWallet==='true') {
-        html+=`
-  <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #e2e8f0;">
-    <div style="font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">📍 Active Investments</div>
-    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-      <thead><tr style="background:#f8fafc;"><th style="padding:8px;text-align:left;color:#64748b;">Plot</th><th style="padding:8px;text-align:right;color:#64748b;">Committed</th><th style="padding:8px;text-align:right;color:#64748b;">Share %</th></tr></thead>
-      <tbody>`
-        activeInvestments.forEach(p=>{
-          html+=`<tr style="border-top:1px solid #f1f5f9;"><td style="padding:8px;">${p.plotName}</td><td style="padding:8px;text-align:right;font-weight:600;">₹${fmtNum(p.commitment)}</td><td style="padding:8px;text-align:right;color:#64748b;">${num(p.sharePercent).toFixed(2)}%</td></tr>`
-        })
-        html+=`</tbody></table></div>`
-      }
+  ${cfg.includePL !== 'false' && completedInvestments.length > 0 ? `
+  <!-- COMPLETED INVESTMENTS -->
+  <tr><td style="background:#ffffff;padding:8px 28px 20px;">
+    <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">✅ Completed Investments</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        <tr style="background:#f8fafc;">
+          <th style="padding:8px 10px;text-align:left;color:#64748b;font-weight:600;">Plot</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">My P&L</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Total Received</th>
+        </tr>
+        ${completedInvestments.map(p => {
+          const plColor = p.profitLossShare >= 0 ? '#16a34a' : '#dc2626'
+          const plSign  = p.profitLossShare >= 0 ? '+' : ''
+          return `<tr style="border-top:1px solid #f1f5f9;">
+            <td style="padding:10px 10px;">${p.plotName}</td>
+            <td style="padding:10px 10px;text-align:right;font-weight:700;color:${plColor};">${plSign}₹${fmtNum(p.profitLossShare)}</td>
+            <td style="padding:10px 10px;text-align:right;font-weight:600;color:#d97706;">₹${fmtNum(p.totalReceived)}</td>
+          </tr>`
+        }).join('')}
+      </table>
+    </div>
+  </td></tr>` : ''}
 
-      if(cfg.includePL==='true' && completedInvestments.length) {
-        html+=`
-  <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #e2e8f0;">
-    <div style="font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">✅ Completed Investments</div>
-    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-      <thead><tr style="background:#f8fafc;"><th style="padding:8px;text-align:left;color:#64748b;">Plot</th><th style="padding:8px;text-align:right;color:#64748b;">My P&L</th><th style="padding:8px;text-align:right;color:#64748b;">Received</th></tr></thead>
-      <tbody>`
-        completedInvestments.forEach(p=>{
-          const plColor=p.profitLossShare>=0?'#16a34a':'#dc2626'
-          html+=`<tr style="border-top:1px solid #f1f5f9;"><td style="padding:8px;">${p.plotName}</td><td style="padding:8px;text-align:right;font-weight:600;color:${plColor};">₹${fmtNum(p.profitLossShare)}</td><td style="padding:8px;text-align:right;color:#f59e0b;font-weight:600;">₹${fmtNum(p.totalReceived)}</td></tr>`
-        })
-        html+=`</tbody></table></div>`
-      }
+  ${cfg.includeTransactions !== 'false' && recentTxns.length > 0 ? `
+  <!-- RECENT TRANSACTIONS -->
+  <tr><td style="background:#ffffff;padding:8px 28px 20px;">
+    <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">📋 Recent Activity</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        ${recentTxns.map(t => {
+          const isPos = num(t.amount) >= 0
+          const color = isPos ? '#16a34a' : '#dc2626'
+          const sign  = isPos ? '+' : ''
+          const d     = new Date(t.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+          const typeLabel = {
+            PROFIT_DISTRIBUTION:'Profit', LOSS_DISTRIBUTION:'Loss',
+            WITHDRAWAL:'Withdrawal', ADJUSTMENT:'Adjustment', REINVESTMENT:'Reinvestment'
+          }[t.type] || t.type
+          return `<tr style="border-top:1px solid #f1f5f9;">
+            <td style="padding:9px 10px;color:#94a3b8;font-size:12px;white-space:nowrap;">${d}</td>
+            <td style="padding:9px 10px;">
+              <span style="font-size:11px;background:${isPos?'#f0fdf4':'#fef2f2'};color:${color};padding:2px 7px;border-radius:999px;font-weight:600;">${typeLabel}</span>
+              <div style="font-size:12px;color:#64748b;margin-top:2px;">${t.description||''}</div>
+            </td>
+            <td style="padding:9px 10px;text-align:right;font-weight:700;color:${color};white-space:nowrap;">${sign}₹${fmtNum(Math.abs(num(t.amount)))}</td>
+          </tr>`
+        }).join('')}
+      </table>
+    </div>
+  </td></tr>` : ''}
 
-      if(cfg.includeTransactions==='true') {
-        const recentTxns=detail.transactions.slice(-5)
-        if(recentTxns.length) {
-          html+=`
-  <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #e2e8f0;">
-    <div style="font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">📋 Recent Transactions</div>
-    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-      <thead><tr style="background:#f8fafc;"><th style="padding:8px;text-align:left;color:#64748b;">Date</th><th style="padding:8px;text-align:left;color:#64748b;">Note</th><th style="padding:8px;text-align:right;color:#64748b;">Amount</th></tr></thead>
-      <tbody>`
-          recentTxns.forEach(t=>{
-            const c=num(t.amount)>=0?'#16a34a':'#dc2626'
-            const d=new Date(t.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
-            html+=`<tr style="border-top:1px solid #f1f5f9;"><td style="padding:8px;color:#64748b;">${d}</td><td style="padding:8px;">${t.description}</td><td style="padding:8px;text-align:right;font-weight:600;color:${c};">₹${fmtNum(t.amount)}</td></tr>`
-          })
-          html+=`</tbody></table></div>`
-        }
-      }
+  <!-- CTA BUTTON -->
+  <tr><td style="background:#ffffff;padding:8px 28px 28px;text-align:center;border-radius:0 0 0 0;">
+    <div style="border-top:1px solid #f1f5f9;padding-top:24px;">
+      <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#f0a500,#e06c00);color:#000;font-weight:700;font-size:14px;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:0.3px;">View Full Dashboard →</a>
+    </div>
+  </td></tr>
 
-      html+=`
-  <div style="text-align:center;padding:16px;color:#94a3b8;font-size:0.75rem;">
-    This is an automated statement from RealtyTrack. For queries, contact your investment manager.<br>
-    <a href="https://realtytrack.app" style="color:#f0a500;">View Full Dashboard →</a>
-  </div>
-</div>`
+  <!-- FOOTER -->
+  <tr><td style="background:#1a2035;border-radius:0 0 16px 16px;padding:20px 28px;text-align:center;">
+    <div style="color:#94a3b8;font-size:12px;line-height:1.8;">
+      This is an automated statement from <strong style="color:#f0a500;">${senderName}</strong>.<br>
+      For queries, reply to this email or contact your investment manager.<br>
+      <span style="font-size:11px;color:#475569;">Sent on ${reportDate}</span>
+    </div>
+  </td></tr>
 
-      GmailApp.sendEmail(inv.email, subject, '', {htmlBody: html, name: cfg.senderName||'RealtyTrack'})
+</table>
+</td></tr>
+</table>
+</body>
+</html>`
+
+      GmailApp.sendEmail(inv.email, subject, 
+        // Plain text fallback
+        `Hi ${inv.name},\n\nYour RealtyTrack statement for ${monthName} ${year}:\n\nWallet Balance: Rs.${fmtNum(walletBal)}\nCash Invested: Rs.${fmtNum(returns.cashInvested)}\nProfit Earned: Rs.${fmtNum(returns.profitCredits)}\n\nView full details: ${appUrl}\n\nRegards,\n${senderName}`,
+        { htmlBody: html, name: senderName }
+      )
       sent++
     } catch(e) {
-      console.error('Failed to send to '+inv.email+': '+e)
+      failed++
+      errors.push(inv.email + ': ' + e.toString())
+      console.error('Failed to send to ' + inv.email + ': ' + e)
     }
   })
-  return {success:true,sent}
+  return { success: true, sent, failed, errors }
 }
 
 function fmtNum(v) {
