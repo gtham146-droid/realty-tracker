@@ -187,10 +187,27 @@ function InvestorDetail({ investorId, onClose, onRefresh }) {
   const [tab, setTab] = useState('overview')
   const [modal, setModal] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [sending, setSending] = useState(false)
+  const [sendMsg, setSendMsg] = useState(null)
   const { isAdmin } = useAuth()
 
   const load = useCallback(() => API.get('getInvestorDetail', { investorId }).then(setDetail), [investorId])
   useEffect(() => { load() }, [load])
+
+  const sendReport = async () => {
+    if (!detail?.email?.includes('@')) {
+      setSendMsg({ type: 'error', text: 'No email address on file for this investor.' })
+      return
+    }
+    setSending(true); setSendMsg(null)
+    const res = await API.post('sendReportToInvestor', { investorId })
+    setSending(false)
+    setSendMsg(res.success
+      ? { type: 'success', text: `✅ Statement sent to ${res.email}` }
+      : { type: 'error', text: res.error || 'Send failed' })
+    setTimeout(() => setSendMsg(null), 5000)
+  }
+
   if (!detail) return <Loader />
 
   const walletBal = detail.wallet?.balance || 0
@@ -211,6 +228,9 @@ function InvestorDetail({ investorId, onClose, onRefresh }) {
           <div className="detail-sub">{detail.email} {detail.phone ? `· ${detail.phone}` : ''}</div>
         </div>
         <div className="detail-actions">
+          {isAdmin && <Btn variant="ghost" sm onClick={sendReport} loading={sending} title={detail.email ? `Send to ${detail.email}` : 'No email on file'}>
+            📧 Send Report
+          </Btn>}
           {isAdmin && <Btn variant="ghost" sm onClick={() => setModal('edit')}>Edit</Btn>}
           {isAdmin && <Btn variant="danger" sm onClick={() => setConfirm({
             msg: `Delete "${detail.name}"? Removes wallet, commitments, and all transaction history.`,
@@ -218,6 +238,16 @@ function InvestorDetail({ investorId, onClose, onRefresh }) {
           })}>Delete</Btn>}
         </div>
       </div>
+
+      {/* Send message */}
+      {sendMsg && (
+        <div style={{
+          background: sendMsg.type === 'success' ? 'var(--green-soft)' : 'var(--red-soft)',
+          border: `1px solid ${sendMsg.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          color: sendMsg.type === 'success' ? 'var(--green)' : 'var(--red)',
+          padding: '8px 14px', borderRadius: 8, marginBottom: 14, fontSize: '0.83rem'
+        }}>{sendMsg.text}</div>
+      )}
 
       {/* Top summary row */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>

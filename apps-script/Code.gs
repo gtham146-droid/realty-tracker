@@ -56,6 +56,7 @@ function doGet(e) {
       case 'updatePlotStatus':  return ok(editRow(S.PLOTS,'plotId',{plotId:body.plotId,status:body.status}))
       case 'saveReportConfig':  return ok(saveReportConfig(body))
       case 'sendReportsNow':    return ok(sendAllReports())
+      case 'sendReportToInvestor': return ok(sendReportToInvestor(body.investorId))
       case 'savePrincipalReturns': return ok(savePrincipalReturns(body))
       case 'getPrincipalReturns':  return ok(getPrincipalReturns(p.saleId))
       default:                  return ok({error:'Unknown action: '+action})
@@ -585,54 +586,21 @@ function scheduledReport() {
   sendAllReports()
 }
 
-function sendAllReports() {
-  const investors = getRows(getSheet(S.INVESTORS))
-  const cfg       = getReportConfig().config
-  const appUrl    = getConfigVal('appUrl') || 'https://gtham146-droid.github.io/realty-tracker/'
-  const senderName= cfg.senderName || 'RealtyTrack'
-  let sent = 0, failed = 0, errors = []
-
-  const now       = new Date()
-  const monthName = now.toLocaleString('en-IN', {month:'long'})
-  const year      = now.getFullYear()
-  const reportDate= now.toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})
-
-  investors.forEach(inv => {
-    if (!inv.email || !inv.email.includes('@')) return
-    try {
-      const returns   = getInvestorReturns(inv.investorId)
-      const detail    = getInvestorDetail(inv.investorId)
-      const walletBal = returns.walletBalance
-      const roi       = returns.cashInvested > 0
-        ? ((returns.profitCredits / returns.cashInvested) * 100).toFixed(1) + '%'
-        : '—'
-
-      const activeInvestments    = returns.plotBreakdowns.filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
-      const completedInvestments = returns.plotBreakdowns.filter(p => p.plotStatus === 'Sold')
-      const recentTxns           = (detail.transactions || []).slice(-5).reverse()
-
-      const subject = (cfg.subject || 'Your Investment Statement — {month} {year}')
-        .replace('{month}', monthName).replace('{year}', year).replace('{name}', inv.name)
-
-      // ── Email HTML ──────────────────────────────────────────
-      const html = `<!DOCTYPE html>
+function buildEmailHtml({inv, senderName, appUrl, monthName, year, reportDate, walletBal, returns, roi, activeInvestments, completedInvestments, recentTxns, cfg}) {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
-
-  <!-- HEADER -->
   <tr><td style="background:linear-gradient(135deg,#0c1428 0%,#1a2d50 100%);border-radius:16px 16px 0 0;padding:36px 32px;text-align:center;">
-    <div style="display:inline-block;background:linear-gradient(135deg,#f0a500,#e06c00);border-radius:14px;width:52px;height:52px;line-height:52px;font-size:26px;margin-bottom:14px;">🏠</div>
+    <div style="display:inline-block;background:linear-gradient(135deg,#f0a500,#e06c00);border-radius:14px;width:52px;height:52px;line-height:52px;font-size:26px;margin-bottom:14px;text-align:center;">🏠</div>
     <div style="color:#f0a500;font-size:22px;font-weight:700;letter-spacing:-0.5px;margin-bottom:4px;">${senderName}</div>
     <div style="color:#94a3b8;font-size:13px;">Investment Statement · ${monthName} ${year}</div>
     <div style="margin-top:16px;color:#e2e8f0;font-size:16px;font-weight:500;">Hi ${inv.name} 👋</div>
     <div style="color:#94a3b8;font-size:13px;margin-top:4px;">Here's your portfolio summary as of ${reportDate}</div>
   </td></tr>
-
-  <!-- SUMMARY CARDS -->
   <tr><td style="background:#ffffff;padding:24px 28px 8px;">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:16px;">Portfolio Summary</div>
     <table width="100%" cellpadding="0" cellspacing="0">
@@ -664,18 +632,16 @@ function sendAllReports() {
       </tr>
     </table>
   </td></tr>
-
   ${activeInvestments.length > 0 && cfg.includeWallet !== 'false' ? `
-  <!-- ACTIVE INVESTMENTS -->
   <tr><td style="background:#ffffff;padding:8px 28px 20px;">
     <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">📍 Active Investments</div>
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
         <tr style="background:#f8fafc;">
-          <th style="padding:8px 10px;text-align:left;color:#64748b;font-weight:600;border-radius:6px 0 0 6px;">Plot</th>
+          <th style="padding:8px 10px;text-align:left;color:#64748b;font-weight:600;">Plot</th>
           <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Committed</th>
           <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Still Locked</th>
-          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;border-radius:0 6px 6px 0;">Share %</th>
+          <th style="padding:8px 10px;text-align:right;color:#64748b;font-weight:600;">Share %</th>
         </tr>
         ${activeInvestments.map(p => {
           const locked = p.netLocked !== undefined ? p.netLocked : p.commitment
@@ -690,9 +656,7 @@ function sendAllReports() {
       </table>
     </div>
   </td></tr>` : ''}
-
   ${cfg.includePL !== 'false' && completedInvestments.length > 0 ? `
-  <!-- COMPLETED INVESTMENTS -->
   <tr><td style="background:#ffffff;padding:8px 28px 20px;">
     <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">✅ Completed Investments</div>
@@ -714,9 +678,7 @@ function sendAllReports() {
       </table>
     </div>
   </td></tr>` : ''}
-
   ${cfg.includeTransactions !== 'false' && recentTxns.length > 0 ? `
-  <!-- RECENT TRANSACTIONS -->
   <tr><td style="background:#ffffff;padding:8px 28px 20px;">
     <div style="border-top:1px solid #f1f5f9;padding-top:20px;">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;">📋 Recent Activity</div>
@@ -726,10 +688,7 @@ function sendAllReports() {
           const color = isPos ? '#16a34a' : '#dc2626'
           const sign  = isPos ? '+' : ''
           const d     = new Date(t.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
-          const typeLabel = {
-            PROFIT_DISTRIBUTION:'Profit', LOSS_DISTRIBUTION:'Loss',
-            WITHDRAWAL:'Withdrawal', ADJUSTMENT:'Adjustment', REINVESTMENT:'Reinvestment'
-          }[t.type] || t.type
+          const typeLabel = {PROFIT_DISTRIBUTION:'Profit',LOSS_DISTRIBUTION:'Loss',WITHDRAWAL:'Withdrawal',ADJUSTMENT:'Adjustment',REINVESTMENT:'Reinvestment'}[t.type] || t.type
           return `<tr style="border-top:1px solid #f1f5f9;">
             <td style="padding:9px 10px;color:#94a3b8;font-size:12px;white-space:nowrap;">${d}</td>
             <td style="padding:9px 10px;">
@@ -742,32 +701,58 @@ function sendAllReports() {
       </table>
     </div>
   </td></tr>` : ''}
-
-  <!-- CTA BUTTON -->
-  <tr><td style="background:#ffffff;padding:8px 28px 28px;text-align:center;border-radius:0 0 0 0;">
+  <tr><td style="background:#ffffff;padding:8px 28px 28px;text-align:center;">
     <div style="border-top:1px solid #f1f5f9;padding-top:24px;">
       <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#f0a500,#e06c00);color:#000;font-weight:700;font-size:14px;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:0.3px;">View Full Dashboard →</a>
     </div>
   </td></tr>
-
-  <!-- FOOTER -->
   <tr><td style="background:#1a2035;border-radius:0 0 16px 16px;padding:20px 28px;text-align:center;">
     <div style="color:#94a3b8;font-size:12px;line-height:1.8;">
-      This is an automated statement from <strong style="color:#f0a500;">${senderName}</strong>.<br>
+      Automated statement from <strong style="color:#f0a500;">${senderName}</strong>.<br>
       For queries, reply to this email or contact your investment manager.<br>
       <span style="font-size:11px;color:#475569;">Sent on ${reportDate}</span>
     </div>
   </td></tr>
-
 </table>
 </td></tr>
 </table>
 </body>
 </html>`
+}
 
-      GmailApp.sendEmail(inv.email, subject, 
-        // Plain text fallback
-        `Hi ${inv.name},\n\nYour RealtyTrack statement for ${monthName} ${year}:\n\nWallet Balance: Rs.${fmtNum(walletBal)}\nCash Invested: Rs.${fmtNum(returns.cashInvested)}\nProfit Earned: Rs.${fmtNum(returns.profitCredits)}\n\nView full details: ${appUrl}\n\nRegards,\n${senderName}`,
+function sendAllReports() {
+  const investors = getRows(getSheet(S.INVESTORS))
+  const cfg       = getReportConfig().config
+  const appUrl    = getConfigVal('appUrl') || 'https://gtham146-droid.github.io/realty-tracker/'
+  const senderName= cfg.senderName || 'RealtyTrack'
+  let sent = 0, failed = 0, errors = []
+
+  const now       = new Date()
+  const monthName = now.toLocaleString('en-IN', {month:'long'})
+  const year      = now.getFullYear()
+  const reportDate= now.toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})
+
+  investors.forEach(inv => {
+    if (!inv.email || !inv.email.includes('@')) return
+    try {
+      const returns   = getInvestorReturns(inv.investorId)
+      const detail    = getInvestorDetail(inv.investorId)
+      const walletBal = returns.walletBalance
+      const roi       = returns.cashInvested > 0
+        ? ((returns.profitCredits / returns.cashInvested) * 100).toFixed(1) + '%' : '—'
+
+      const activeInvestments    = returns.plotBreakdowns.filter(p => ['Active','Partially Sold','On Hold'].includes(p.plotStatus))
+      const completedInvestments = returns.plotBreakdowns.filter(p => p.plotStatus === 'Sold')
+      const recentTxns           = (detail.transactions || []).slice(-5).reverse()
+
+      const subject = (cfg.subject || 'Your Investment Statement — {month} {year}')
+        .replace('{month}', monthName).replace('{year}', year).replace('{name}', inv.name)
+
+      const html = buildEmailHtml({inv, senderName, appUrl, monthName, year, reportDate,
+        walletBal, returns, roi, activeInvestments, completedInvestments, recentTxns, cfg})
+
+      GmailApp.sendEmail(inv.email, subject,
+        `Hi ${inv.name},\n\nYour RealtyTrack statement for ${monthName} ${year}.\n\nWallet: Rs.${fmtNum(walletBal)}\nProfit: Rs.${fmtNum(returns.profitCredits)}\n\n${appUrl}`,
         { htmlBody: html, name: senderName }
       )
       sent++
