@@ -782,3 +782,220 @@ function getTransactions(investorId) {
 function getWallet(investorId) {
   return getRows(getSheet(S.WALLET)).find(w=>w.investorId===investorId)||{balance:0}
 }
+
+// ── v2 EMAIL FUNCTIONS (replaces any earlier versions) ────────
+// Uses no emojis for better email client compatibility
+// Includes proper headers to reduce spam likelihood
+
+function buildEmailHtml(o) {
+  var inv=o.inv, senderName=o.senderName, appUrl=o.appUrl
+  var monthName=o.monthName, year=o.year, reportDate=o.reportDate
+  var walletBal=o.walletBal, returns=o.returns, roi=o.roi
+  var activeInvestments=o.activeInvestments
+  var completedInvestments=o.completedInvestments
+  var recentTxns=o.recentTxns, cfg=o.cfg
+
+  // Active investments section
+  var aiHtml = ''
+  if (activeInvestments.length > 0 && cfg.includeWallet !== 'false') {
+    var aiRows = activeInvestments.map(function(p) {
+      var locked   = p.netLocked !== undefined ? p.netLocked : p.commitment
+      var returned = p.principalReturned || 0
+      var retStr   = returned > 0 ? '<br><span style="font-size:11px;color:#16a34a;">Rs.'+fmtNum(returned)+' returned</span>' : ''
+      return '<tr style="border-top:1px solid #f1f5f9;">'
+        + '<td style="padding:10px 12px;">'+p.plotName+'<br><span style="font-size:11px;color:#94a3b8;">'+p.plotStatus+'</span></td>'
+        + '<td style="padding:10px 12px;text-align:right;font-weight:600;">Rs.'+fmtNum(p.commitment)+'</td>'
+        + '<td style="padding:10px 12px;text-align:right;font-weight:600;color:#b45309;">Rs.'+fmtNum(locked)+retStr+'</td>'
+        + '<td style="padding:10px 12px;text-align:right;color:#64748b;">'+num(p.sharePercent).toFixed(2)+'%</td>'
+        + '</tr>'
+    }).join('')
+    aiHtml = '<tr><td style="background:#ffffff;padding:4px 28px 20px;">'
+      + '<div style="border-top:2px solid #f1f5f9;padding-top:20px;">'
+      + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:12px;">ACTIVE INVESTMENTS</div>'
+      + '<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border-collapse:collapse;">'
+      + '<tr style="background:#f8fafc;"><th style="padding:8px 12px;text-align:left;color:#64748b;font-weight:600;">Plot</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#64748b;font-weight:600;">Committed</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#64748b;font-weight:600;">Still Locked</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#64748b;font-weight:600;">Share %</th></tr>'
+      + aiRows
+      + '</table></div></td></tr>'
+  }
+
+  // Completed investments section
+  var ciHtml = ''
+  if (cfg.includePL !== 'false' && completedInvestments.length > 0) {
+    var ciRows = completedInvestments.map(function(p) {
+      var plColor = p.profitLossShare >= 0 ? '#16a34a' : '#dc2626'
+      var plSign  = p.profitLossShare >= 0 ? '+' : ''
+      return '<tr style="border-top:1px solid #f1f5f9;">'
+        + '<td style="padding:10px 12px;">'+p.plotName+'</td>'
+        + '<td style="padding:10px 12px;text-align:right;font-weight:700;color:'+plColor+';">'+plSign+'Rs.'+fmtNum(p.profitLossShare)+'</td>'
+        + '<td style="padding:10px 12px;text-align:right;font-weight:600;color:#b45309;">Rs.'+fmtNum(p.totalReceived)+'</td>'
+        + '</tr>'
+    }).join('')
+    ciHtml = '<tr><td style="background:#ffffff;padding:4px 28px 20px;">'
+      + '<div style="border-top:2px solid #f1f5f9;padding-top:20px;">'
+      + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:12px;">COMPLETED INVESTMENTS</div>'
+      + '<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border-collapse:collapse;">'
+      + '<tr style="background:#f8fafc;"><th style="padding:8px 12px;text-align:left;color:#64748b;font-weight:600;">Plot</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#64748b;font-weight:600;">My P&amp;L</th>'
+      + '<th style="padding:8px 12px;text-align:right;color:#64748b;font-weight:600;">Total Received</th></tr>'
+      + ciRows
+      + '</table></div></td></tr>'
+  }
+
+  // Recent transactions section
+  var rtHtml = ''
+  if (cfg.includeTransactions !== 'false' && recentTxns.length > 0) {
+    var typeLabels = {
+      PROFIT_DISTRIBUTION:'Profit Credit', LOSS_DISTRIBUTION:'Loss Deduction',
+      WITHDRAWAL:'Withdrawal', ADJUSTMENT:'Adjustment', REINVESTMENT:'Reinvestment'
+    }
+    var rtRows = recentTxns.map(function(t) {
+      var isPos  = num(t.amount) >= 0
+      var color  = isPos ? '#16a34a' : '#dc2626'
+      var bgCol  = isPos ? '#f0fdf4' : '#fef2f2'
+      var sign   = isPos ? '+' : ''
+      var d      = new Date(t.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+      var label  = typeLabels[t.type] || t.type
+      return '<tr style="border-top:1px solid #f1f5f9;">'
+        + '<td style="padding:9px 12px;color:#94a3b8;font-size:12px;white-space:nowrap;">'+d+'</td>'
+        + '<td style="padding:9px 12px;"><span style="font-size:11px;background:'+bgCol+';color:'+color+';padding:2px 8px;border-radius:4px;font-weight:600;">'+label+'</span>'
+        + '<div style="font-size:12px;color:#64748b;margin-top:2px;">'+(t.description||'')+'</div></td>'
+        + '<td style="padding:9px 12px;text-align:right;font-weight:700;color:'+color+';white-space:nowrap;">'+sign+'Rs.'+fmtNum(Math.abs(num(t.amount)))+'</td>'
+        + '</tr>'
+    }).join('')
+    rtHtml = '<tr><td style="background:#ffffff;padding:4px 28px 20px;">'
+      + '<div style="border-top:2px solid #f1f5f9;padding-top:20px;">'
+      + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:12px;">RECENT ACTIVITY</div>'
+      + '<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border-collapse:collapse;">'
+      + rtRows
+      + '</table></div></td></tr>'
+  }
+
+  return '<!DOCTYPE html><html lang="en">'
+    + '<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">'
+    + '<title>'+senderName+' — Investment Statement</title></head>'
+    + '<body style="margin:0;padding:0;background:#eef2f7;font-family:\'Segoe UI\',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">'
+    + '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#eef2f7;padding:32px 16px;">'
+    + '<tr><td align="center">'
+    + '<table width="600" cellpadding="0" cellspacing="0" role="presentation" style="max-width:600px;width:100%;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">'
+
+    // Header
+    + '<tr><td style="background:#0c1a35;padding:40px 32px;text-align:center;">'
+    + '<div style="font-family:Georgia,serif;font-size:26px;font-weight:700;color:#f0a500;letter-spacing:-0.5px;margin-bottom:4px;">'+senderName+'</div>'
+    + '<div style="font-size:13px;color:#94a3b8;letter-spacing:0.5px;">INVESTMENT STATEMENT &middot; '+monthName.toUpperCase()+' '+year+'</div>'
+    + '<div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);">'
+    + '<div style="color:#e2e8f0;font-size:17px;font-weight:600;">Hello, '+inv.name+'</div>'
+    + '<div style="color:#94a3b8;font-size:13px;margin-top:4px;">Portfolio summary as of '+reportDate+'</div>'
+    + '</div></td></tr>'
+
+    // Summary cards
+    + '<tr><td style="background:#ffffff;padding:28px 28px 16px;">'
+    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:16px;">PORTFOLIO SUMMARY</div>'
+    + '<table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>'
+    + '<td width="25%" style="padding:0 5px 0 0;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 10px;text-align:center;">'
+    + '<div style="font-size:17px;font-weight:700;color:#16a34a;font-family:Georgia,serif;">Rs.'+fmtNum(walletBal)+'</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px;font-weight:500;">WALLET</div></div></td>'
+    + '<td width="25%" style="padding:0 5px;"><div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 10px;text-align:center;">'
+    + '<div style="font-size:17px;font-weight:700;color:#2563eb;font-family:Georgia,serif;">Rs.'+fmtNum(returns.cashInvested)+'</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px;font-weight:500;">CASH IN</div></div></td>'
+    + '<td width="25%" style="padding:0 5px;"><div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;padding:16px 10px;text-align:center;">'
+    + '<div style="font-size:17px;font-weight:700;color:#7c3aed;font-family:Georgia,serif;">Rs.'+fmtNum(returns.profitCredits)+'</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px;font-weight:500;">PROFIT</div></div></td>'
+    + '<td width="25%" style="padding:0 0 0 5px;"><div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px 10px;text-align:center;">'
+    + '<div style="font-size:17px;font-weight:700;color:#b45309;font-family:Georgia,serif;">'+roi+'</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:4px;font-weight:500;">NET ROI</div></div></td>'
+    + '</tr></table></td></tr>'
+
+    + aiHtml + ciHtml + rtHtml
+
+    // CTA button
+    + '<tr><td style="background:#ffffff;padding:12px 28px 32px;text-align:center;">'
+    + '<div style="border-top:2px solid #f1f5f9;padding-top:24px;">'
+    + '<a href="'+appUrl+'" style="display:inline-block;background:#f0a500;color:#000000;font-weight:700;font-size:14px;padding:14px 36px;border-radius:10px;text-decoration:none;letter-spacing:0.3px;font-family:\'Segoe UI\',Arial,sans-serif;">View Full Dashboard</a>'
+    + '</div></td></tr>'
+
+    // Footer
+    + '<tr><td style="background:#1a2035;padding:22px 28px;text-align:center;">'
+    + '<div style="color:#94a3b8;font-size:12px;line-height:1.9;">'
+    + 'This is an automated statement from <span style="color:#f0a500;font-weight:600;">'+senderName+'</span>.<br>'
+    + 'For any queries, reply to this email or contact your investment manager.<br>'
+    + '<span style="color:#475569;font-size:11px;">Generated on '+reportDate+'</span>'
+    + '</div></td></tr>'
+
+    + '</table></td></tr></table></body></html>'
+}
+
+function sendReportToInvestor(investorId) {
+  var investors = getRows(getSheet(S.INVESTORS))
+  var inv = investors.find(function(i) { return i.investorId === investorId })
+  if (!inv)                              return {success:false, error:'Investor not found'}
+  if (!inv.email||!inv.email.includes('@')) return {success:false, error:'No email address on file'}
+
+  var cfg        = getReportConfig().config
+  var appUrl     = getConfigVal('appUrl') || ''
+  var senderName = cfg.senderName || 'RealtyTrack'
+  var now        = new Date()
+  var monthName  = now.toLocaleString('en-IN', {month:'long'})
+  var year       = now.getFullYear()
+  var reportDate = now.toLocaleDateString('en-IN', {day:'2-digit', month:'long', year:'numeric'})
+  var subject    = (cfg.subject || 'Your Investment Statement — {month} {year}')
+    .replace('{month}', monthName).replace('{year}', year).replace('{name}', inv.name)
+
+  try {
+    var returns  = getInvestorReturns(inv.investorId)
+    var detail   = getInvestorDetail(inv.investorId)
+    var walletBal = returns.walletBalance
+    var roi = returns.cashInvested > 0
+      ? ((returns.profitCredits / returns.cashInvested) * 100).toFixed(1) + '%' : '0.0%'
+
+    var activeInvestments    = returns.plotBreakdowns.filter(function(p) {
+      return ['Active','Partially Sold','On Hold'].indexOf(p.plotStatus) > -1
+    })
+    var completedInvestments = returns.plotBreakdowns.filter(function(p) {
+      return p.plotStatus === 'Sold'
+    })
+    var recentTxns = (detail.transactions || []).slice(-5).reverse()
+
+    var html = buildEmailHtml({
+      inv:inv, senderName:senderName, appUrl:appUrl,
+      monthName:monthName, year:year, reportDate:reportDate,
+      walletBal:walletBal, returns:returns, roi:roi,
+      activeInvestments:activeInvestments,
+      completedInvestments:completedInvestments,
+      recentTxns:recentTxns, cfg:cfg
+    })
+
+    // Plain text fallback (important for spam score)
+    var plainText = 'Dear ' + inv.name + ',\n\n'
+      + 'Please find your investment statement for ' + monthName + ' ' + year + ' below.\n\n'
+      + 'PORTFOLIO SUMMARY\n'
+      + '─────────────────\n'
+      + 'Wallet Balance : Rs.' + fmtNum(walletBal) + '\n'
+      + 'Cash Invested  : Rs.' + fmtNum(returns.cashInvested) + '\n'
+      + 'Profit Earned  : Rs.' + fmtNum(returns.profitCredits) + '\n'
+      + 'Net ROI        : ' + roi + '\n\n'
+      + 'View your full dashboard: ' + appUrl + '\n\n'
+      + 'Regards,\n' + senderName + '\n\n'
+      + '---\n'
+      + 'This is an automated message. Please do not reply directly to this email.\n'
+      + 'For queries, contact your investment manager.'
+
+    GmailApp.sendEmail(
+      inv.email,
+      subject,
+      plainText,
+      {
+        htmlBody: html,
+        name: senderName,
+        noReply: false,
+        replyTo: Session.getActiveUser().getEmail()
+      }
+    )
+    return {success:true, sent:1, email:inv.email}
+  } catch(e) {
+    return {success:false, error:e.toString()}
+  }
+}
